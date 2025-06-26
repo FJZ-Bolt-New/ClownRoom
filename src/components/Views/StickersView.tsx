@@ -22,7 +22,10 @@ import {
   Layers,
   Copy,
   Lock,
-  Unlock
+  Unlock,
+  Package,
+  FolderPlus,
+  Check
 } from 'lucide-react';
 import { Sticker, StickerElement } from '../../types';
 import toast from 'react-hot-toast';
@@ -34,7 +37,8 @@ export const StickersView = () => {
     updateUserPoints, 
     stickerPacks, 
     addStickerToPack, 
-    updateStickerPack 
+    updateStickerPack,
+    addStickerPack
   } = useStore();
   
   const [activeTab, setActiveTab] = useState<'create' | 'my-stickers' | 'my-packs' | 'explore'>('create');
@@ -44,6 +48,14 @@ export const StickersView = () => {
   const [resizeStart, setResizeStart] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [resizeHandle, setResizeHandle] = useState<string | null>(null);
   const [showLayerPanel, setShowLayerPanel] = useState(true);
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [saveData, setSaveData] = useState({
+    name: '',
+    packId: 'pack-default',
+    createNewPack: false,
+    newPackName: '',
+    newPackDescription: ''
+  });
   const canvasRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -384,10 +396,33 @@ export const StickersView = () => {
     ));
   };
 
-  // Save sticker
-  const saveSticker = async () => {
+  // Enhanced save sticker function
+  const openSaveModal = () => {
     if (elements.length === 0) {
       toast.error('Add some elements first! 🎨');
+      return;
+    }
+
+    // Generate default name
+    const defaultName = `Sticker ${new Date().toLocaleDateString()}`;
+    setSaveData({
+      name: defaultName,
+      packId: 'pack-default',
+      createNewPack: false,
+      newPackName: '',
+      newPackDescription: ''
+    });
+    setShowSaveModal(true);
+  };
+
+  const saveSticker = async () => {
+    if (!saveData.name.trim()) {
+      toast.error('Please enter a sticker name! 📝');
+      return;
+    }
+
+    if (saveData.createNewPack && !saveData.newPackName.trim()) {
+      toast.error('Please enter a pack name! 📦');
       return;
     }
 
@@ -451,7 +486,7 @@ export const StickersView = () => {
       // Create sticker object
       const newSticker: Sticker = {
         id: `sticker-${Date.now()}`,
-        name: `Sticker ${Date.now()}`,
+        name: saveData.name.trim(),
         imageUrl,
         tags: ['custom'],
         createdBy: 'user-1',
@@ -461,18 +496,41 @@ export const StickersView = () => {
 
       // Add to store
       addSticker(newSticker);
+
+      let targetPackId = saveData.packId;
+
+      // Create new pack if requested
+      if (saveData.createNewPack) {
+        const newPack = {
+          id: `pack-${Date.now()}`,
+          name: saveData.newPackName.trim(),
+          description: saveData.newPackDescription.trim() || 'Custom sticker pack',
+          stickers: [],
+          category: 'custom' as const,
+          count: 0,
+          owned: true,
+          price: 0,
+          createdBy: 'user-1',
+          createdAt: new Date(),
+        };
+
+        addStickerPack(newPack);
+        targetPackId = newPack.id;
+        toast.success(`New pack "${newPack.name}" created! 📦`);
+      }
       
-      // Add to "My Stickers" pack
-      const myStickersPackId = 'pack-default';
-      addStickerToPack(newSticker, myStickersPackId);
+      // Add to selected pack
+      addStickerToPack(newSticker, targetPackId);
       
       // Update pack count
-      updateStickerPack(myStickersPackId, {
-        count: stickerPacks.find(p => p.id === myStickersPackId)?.count || 0 + 1
+      const currentPack = stickerPacks.find(p => p.id === targetPackId);
+      updateStickerPack(targetPackId, {
+        count: (currentPack?.count || 0) + 1
       });
 
       updateUserPoints(20);
-      toast.success('Sticker saved successfully! 🎉 (+20 CP)');
+      setShowSaveModal(false);
+      toast.success(`Sticker "${newSticker.name}" saved successfully! 🎉 (+20 CP)`);
       
     } catch (error) {
       console.error('Error saving sticker:', error);
@@ -492,6 +550,9 @@ export const StickersView = () => {
 
   // Emoji options
   const emojiOptions = ['😀', '😂', '😍', '🤔', '😎', '🤯', '😈', '🤡', '👻', '💀', '🔥', '💯', '⚡', '💎', '🌟', '✨', '🎉', '🎊', '🎈', '🎁'];
+
+  // Get user's owned packs
+  const ownedPacks = stickerPacks.filter(pack => pack.owned);
 
   // My Stickers component
   const MyStickersTab = () => {
@@ -689,7 +750,7 @@ export const StickersView = () => {
                           Clear
                         </button>
                         <button
-                          onClick={saveSticker}
+                          onClick={openSaveModal}
                           className="px-3 py-1 bg-primary text-white rounded text-sm hover:bg-primary/90 transition-colors flex items-center space-x-1"
                         >
                           <Save size={14} />
@@ -1173,6 +1234,144 @@ export const StickersView = () => {
           </AnimatePresence>
         </div>
       </div>
+
+      {/* Enhanced Save Modal */}
+      <AnimatePresence>
+        {showSaveModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            onClick={() => setShowSaveModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-dark-card rounded-2xl p-6 w-full max-w-md"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold text-white flex items-center space-x-2">
+                  <Save size={24} className="text-primary" />
+                  <span>Save Sticker</span>
+                </h2>
+                <button
+                  onClick={() => setShowSaveModal(false)}
+                  className="text-gray-400 hover:text-white transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {/* Sticker Name */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Sticker Name
+                  </label>
+                  <input
+                    type="text"
+                    value={saveData.name}
+                    onChange={(e) => setSaveData(prev => ({ ...prev, name: e.target.value }))}
+                    className="w-full bg-dark-light text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-primary focus:outline-none"
+                    placeholder="Enter sticker name..."
+                    autoFocus
+                  />
+                </div>
+
+                {/* Pack Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Save to Pack
+                  </label>
+                  
+                  {/* Create New Pack Toggle */}
+                  <div className="flex items-center space-x-2 mb-3">
+                    <input
+                      type="checkbox"
+                      id="createNewPack"
+                      checked={saveData.createNewPack}
+                      onChange={(e) => setSaveData(prev => ({ ...prev, createNewPack: e.target.checked }))}
+                      className="w-4 h-4 text-primary bg-dark-light border-gray-700 rounded focus:ring-primary"
+                    />
+                    <label htmlFor="createNewPack" className="text-sm text-gray-300 flex items-center space-x-1">
+                      <FolderPlus size={16} />
+                      <span>Create new pack</span>
+                    </label>
+                  </div>
+
+                  {saveData.createNewPack ? (
+                    <div className="space-y-3">
+                      <input
+                        type="text"
+                        value={saveData.newPackName}
+                        onChange={(e) => setSaveData(prev => ({ ...prev, newPackName: e.target.value }))}
+                        className="w-full bg-dark-light text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-primary focus:outline-none"
+                        placeholder="New pack name..."
+                      />
+                      <textarea
+                        value={saveData.newPackDescription}
+                        onChange={(e) => setSaveData(prev => ({ ...prev, newPackDescription: e.target.value }))}
+                        className="w-full bg-dark-light text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-primary focus:outline-none h-20 resize-none"
+                        placeholder="Pack description (optional)..."
+                      />
+                    </div>
+                  ) : (
+                    <select
+                      value={saveData.packId}
+                      onChange={(e) => setSaveData(prev => ({ ...prev, packId: e.target.value }))}
+                      className="w-full bg-dark-light text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-primary focus:outline-none"
+                    >
+                      {ownedPacks.map((pack) => (
+                        <option key={pack.id} value={pack.id}>
+                          {pack.name} ({pack.count} stickers)
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* Pack Preview */}
+                {!saveData.createNewPack && (
+                  <div className="bg-dark-light rounded-lg p-3 border border-gray-700">
+                    <div className="flex items-center space-x-2">
+                      <Package size={16} className="text-secondary" />
+                      <div>
+                        <div className="text-white font-semibold text-sm">
+                          {ownedPacks.find(p => p.id === saveData.packId)?.name}
+                        </div>
+                        <div className="text-gray-400 text-xs">
+                          {ownedPacks.find(p => p.id === saveData.packId)?.description}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex space-x-3 mt-6">
+                <button
+                  onClick={() => setShowSaveModal(false)}
+                  className="flex-1 py-2 bg-gray-700 text-white rounded-lg font-semibold hover:bg-gray-600 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveSticker}
+                  disabled={!saveData.name.trim() || (saveData.createNewPack && !saveData.newPackName.trim())}
+                  className="flex-1 py-2 bg-primary text-white rounded-lg font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+                >
+                  <Check size={16} />
+                  <span>Save Sticker</span>
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
