@@ -11,16 +11,12 @@ import {
   Share2, 
   Palette, 
   Smile,
-  Eye,
-  EyeOff,
-  MoreVertical,
-  ArrowUp,
-  ArrowDown,
-  ChevronUp,
-  ChevronDown,
-  Copy,
+  Search,
+  Grid,
+  ArrowLeft,
+  Edit2,
   Trash2,
-  Layers
+  MoreVertical
 } from 'lucide-react';
 import { Sticker, StickerElement } from '../../types';
 import toast from 'react-hot-toast';
@@ -49,7 +45,6 @@ export const StickersView = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [showLayerPanel, setShowLayerPanel] = useState(true);
   const [selectedPackId, setSelectedPackId] = useState('pack-default');
   const [newPackName, setNewPackName] = useState('');
   const [showNewPackInput, setShowNewPackInput] = useState(false);
@@ -57,7 +52,7 @@ export const StickersView = () => {
   const canvasRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Emoji categories - restored from previous version
+  // Emoji categories
   const emojiCategories = {
     'Smileys': ['😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃', '😉', '😊', '😇', '🥰', '😍', '🤩', '😘', '😗', '😚', '😙'],
     'Animals': ['🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁', '🐮', '🐷', '🐸', '🐵', '🙈', '🙉', '🙊', '🐒', '🐔'],
@@ -69,102 +64,9 @@ export const StickersView = () => {
 
   const allTags = ['funny', 'cute', 'cool', 'epic', 'meme', 'wholesome', 'cursed', 'random', 'art', 'custom'];
 
-  // Fixed layer management functions
+  // Get max layer for new elements
   const getMaxLayer = () => {
     return elements.length > 0 ? Math.max(...elements.map(el => el.layer)) : 0;
-  };
-
-  const moveElementLayer = (elementId: string, direction: 'up' | 'down' | 'front' | 'back') => {
-    setElements(prevElements => {
-      const elementIndex = prevElements.findIndex(el => el.id === elementId);
-      if (elementIndex === -1) return prevElements;
-
-      const newElements = [...prevElements];
-      const element = newElements[elementIndex];
-      const maxLayer = getMaxLayer();
-
-      switch (direction) {
-        case 'front':
-          element.layer = maxLayer + 1;
-          break;
-        case 'back':
-          element.layer = 0;
-          // Shift all other elements up
-          newElements.forEach(el => {
-            if (el.id !== elementId) {
-              el.layer += 1;
-            }
-          });
-          break;
-        case 'up':
-          if (element.layer < maxLayer) {
-            // Find element with next higher layer and swap
-            const higherElement = newElements.find(el => el.layer === element.layer + 1);
-            if (higherElement) {
-              higherElement.layer = element.layer;
-              element.layer += 1;
-            } else {
-              element.layer += 1;
-            }
-          }
-          break;
-        case 'down':
-          if (element.layer > 0) {
-            // Find element with next lower layer and swap
-            const lowerElement = newElements.find(el => el.layer === element.layer - 1);
-            if (lowerElement) {
-              lowerElement.layer = element.layer;
-              element.layer -= 1;
-            } else {
-              element.layer -= 1;
-            }
-          }
-          break;
-      }
-
-      // Normalize layers to ensure they're sequential
-      const sortedElements = newElements.sort((a, b) => a.layer - b.layer);
-      sortedElements.forEach((el, index) => {
-        el.layer = index;
-      });
-
-      return sortedElements;
-    });
-  };
-
-  const toggleElementVisibility = (elementId: string) => {
-    setElements(prevElements =>
-      prevElements.map(el =>
-        el.id === elementId
-          ? { ...el, visible: !el.visible }
-          : el
-      )
-    );
-  };
-
-  const duplicateElement = (elementId: string) => {
-    const element = elements.find(el => el.id === elementId);
-    if (!element) return;
-
-    const newElement: StickerElement = {
-      ...element,
-      id: `element-${Date.now()}`,
-      x: element.x + 20,
-      y: element.y + 20,
-      layer: getMaxLayer() + 1
-    };
-
-    setElements(prev => [...prev, newElement]);
-    setSelectedElement(newElement.id);
-    toast.success('Element duplicated! 📋');
-  };
-
-  const deleteElement = (elementId: string) => {
-    setElements(prev => prev.filter(el => el.id !== elementId));
-    if (selectedElement === elementId) {
-      setSelectedElement(null);
-    }
-    toast.success('Element deleted! 🗑️');
   };
 
   // Add text element
@@ -181,7 +83,6 @@ export const StickersView = () => {
       flipX: false,
       flipY: false,
       layer: getMaxLayer() + 1,
-      visible: true,
       style: {
         fontSize: 16,
         color: '#ffffff',
@@ -194,7 +95,7 @@ export const StickersView = () => {
     setSelectedElement(newElement.id);
   };
 
-  // Add emoji element - restored previous functionality
+  // Add emoji element
   const addEmojiElement = (emoji: string) => {
     const newElement: StickerElement = {
       id: `element-${Date.now()}`,
@@ -207,8 +108,7 @@ export const StickersView = () => {
       rotation: 0,
       flipX: false,
       flipY: false,
-      layer: getMaxLayer() + 1,
-      visible: true
+      layer: getMaxLayer() + 1
     };
     
     setElements(prev => [...prev, newElement]);
@@ -242,7 +142,6 @@ export const StickersView = () => {
         flipX: false,
         flipY: false,
         layer: getMaxLayer() + 1,
-        visible: true,
         imageData
       };
       
@@ -333,6 +232,15 @@ export const StickersView = () => {
     }));
   };
 
+  // Delete selected element
+  const deleteSelectedElement = () => {
+    if (!selectedElement) return;
+    
+    setElements(prev => prev.filter(el => el.id !== selectedElement));
+    setSelectedElement(null);
+    toast.success('Element deleted! 🗑️');
+  };
+
   // Save sticker
   const saveSticker = async () => {
     if (!stickerName.trim()) {
@@ -364,8 +272,6 @@ export const StickersView = () => {
 
       // Render each element
       for (const element of sortedElements) {
-        if (!element.visible) continue;
-
         ctx.save();
         
         // Apply transformations
@@ -462,9 +368,6 @@ export const StickersView = () => {
   };
 
   const selectedElementData = elements.find(el => el.id === selectedElement);
-
-  // Get sorted elements for layer panel (top to bottom)
-  const sortedElementsForDisplay = [...elements].sort((a, b) => b.layer - a.layer);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-dark via-secondary/20 to-dark relative overflow-hidden">
@@ -593,226 +496,97 @@ export const StickersView = () => {
                 exit={{ opacity: 0, x: -20 }}
                 className="space-y-4"
               >
-                {/* Canvas and Tools */}
+                {/* Canvas */}
                 <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-white font-bold">Sticker Canvas</h3>
-                    <button
-                      onClick={() => setShowLayerPanel(!showLayerPanel)}
-                      className={`p-2 rounded-lg transition-colors ${
-                        showLayerPanel ? 'bg-secondary text-white' : 'bg-gray-700 text-gray-300'
-                      }`}
-                    >
-                      <Layers size={16} />
-                    </button>
-                  </div>
-
-                  <div className="flex space-x-4">
-                    {/* Layer Panel */}
-                    {showLayerPanel && (
-                      <div className="w-48 bg-dark-light rounded-lg p-3 border border-gray-700">
-                        <h4 className="text-white font-semibold mb-2 text-sm">Layers</h4>
-                        <div className="space-y-1 max-h-40 overflow-y-auto">
-                          {sortedElementsForDisplay.map((element, index) => (
-                            <div
-                              key={element.id}
-                              className={`flex items-center space-x-2 p-2 rounded cursor-pointer transition-colors ${
-                                selectedElement === element.id
-                                  ? 'bg-secondary/20 border border-secondary'
-                                  : 'hover:bg-gray-700'
-                              }`}
-                              onClick={() => setSelectedElement(element.id)}
-                            >
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleElementVisibility(element.id);
-                                }}
-                                className="text-gray-400 hover:text-white"
-                              >
-                                {element.visible !== false ? <Eye size={12} /> : <EyeOff size={12} />}
-                              </button>
-                              
-                              <div className="flex-1 flex items-center space-x-2">
-                                <span className="text-xs">
-                                  {element.type === 'text' ? '📝' : 
-                                   element.type === 'emoji' ? element.content : '🖼️'}
-                                </span>
-                                <span className="text-xs text-gray-300 truncate">
-                                  {element.type === 'text' ? element.content : 
-                                   element.type === 'emoji' ? 'Emoji' : 'Image'}
-                                </span>
-                              </div>
-                              
-                              <span className="text-xs text-gray-500">#{element.layer}</span>
-                              
-                              <div className="relative">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    // Toggle context menu
-                                  }}
-                                  className="text-gray-400 hover:text-white"
-                                >
-                                  <MoreVertical size={12} />
-                                </button>
-                                
-                                {/* Context Menu */}
-                                <div className="absolute right-0 top-6 bg-dark-card border border-gray-700 rounded-lg shadow-lg z-20 min-w-32 hidden group-hover:block">
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      moveElementLayer(element.id, 'front');
-                                    }}
-                                    className="w-full px-3 py-2 text-left text-xs text-gray-300 hover:bg-gray-700 flex items-center space-x-2"
-                                  >
-                                    <ChevronUp size={10} />
-                                    <span>To Front</span>
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      moveElementLayer(element.id, 'up');
-                                    }}
-                                    className="w-full px-3 py-2 text-left text-xs text-gray-300 hover:bg-gray-700 flex items-center space-x-2"
-                                  >
-                                    <ArrowUp size={10} />
-                                    <span>Move Up</span>
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      moveElementLayer(element.id, 'down');
-                                    }}
-                                    className="w-full px-3 py-2 text-left text-xs text-gray-300 hover:bg-gray-700 flex items-center space-x-2"
-                                  >
-                                    <ArrowDown size={10} />
-                                    <span>Move Down</span>
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      moveElementLayer(element.id, 'back');
-                                    }}
-                                    className="w-full px-3 py-2 text-left text-xs text-gray-300 hover:bg-gray-700 flex items-center space-x-2"
-                                  >
-                                    <ChevronDown size={10} />
-                                    <span>To Back</span>
-                                  </button>
-                                  <hr className="border-gray-700" />
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      duplicateElement(element.id);
-                                    }}
-                                    className="w-full px-3 py-2 text-left text-xs text-gray-300 hover:bg-gray-700 flex items-center space-x-2"
-                                  >
-                                    <Copy size={10} />
-                                    <span>Duplicate</span>
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      deleteElement(element.id);
-                                    }}
-                                    className="w-full px-3 py-2 text-left text-xs text-red-400 hover:bg-gray-700 flex items-center space-x-2"
-                                  >
-                                    <Trash2 size={10} />
-                                    <span>Delete</span>
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                          
-                          {elements.length === 0 && (
-                            <div className="text-center py-4 text-gray-400 text-xs">
-                              No elements yet
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Canvas */}
-                    <div className="flex-1">
+                  <h3 className="text-white font-bold mb-4">Sticker Canvas</h3>
+                  
+                  <div
+                    ref={canvasRef}
+                    className="relative w-full aspect-square bg-gradient-to-br from-gray-800 to-gray-900 rounded-lg border-2 border-dashed border-gray-600 overflow-hidden mb-4"
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={handleMouseUp}
+                    onMouseLeave={handleMouseUp}
+                  >
+                    {/* Render elements sorted by layer */}
+                    {[...elements]
+                      .sort((a, b) => a.layer - b.layer)
+                      .map((element) => (
                       <div
-                        ref={canvasRef}
-                        className="relative w-full aspect-square bg-gradient-to-br from-gray-800 to-gray-900 rounded-lg border-2 border-dashed border-gray-600 overflow-hidden"
-                        onMouseMove={handleMouseMove}
-                        onMouseUp={handleMouseUp}
-                        onMouseLeave={handleMouseUp}
+                        key={element.id}
+                        className={`absolute cursor-move select-none ${
+                          selectedElement === element.id ? 'ring-2 ring-secondary' : ''
+                        }`}
+                        style={{
+                          left: element.x,
+                          top: element.y,
+                          width: element.width,
+                          height: element.height,
+                          transform: `rotate(${element.rotation}deg) scaleX(${element.flipX ? -1 : 1}) scaleY(${element.flipY ? -1 : 1})`,
+                          zIndex: element.layer
+                        }}
+                        onMouseDown={(e) => handleMouseDown(e, element.id, 'drag')}
                       >
-                        {/* Render elements sorted by layer */}
-                        {[...elements]
-                          .filter(el => el.visible !== false)
-                          .sort((a, b) => a.layer - b.layer)
-                          .map((element) => (
+                        {element.type === 'text' && (
                           <div
-                            key={element.id}
-                            className={`absolute cursor-move select-none ${
-                              selectedElement === element.id ? 'ring-2 ring-secondary' : ''
-                            }`}
+                            className="w-full h-full flex items-center justify-center text-center break-words"
                             style={{
-                              left: element.x,
-                              top: element.y,
-                              width: element.width,
-                              height: element.height,
-                              transform: `rotate(${element.rotation}deg) scaleX(${element.flipX ? -1 : 1}) scaleY(${element.flipY ? -1 : 1})`,
-                              zIndex: element.layer
+                              fontSize: element.style?.fontSize || 16,
+                              color: element.style?.color || '#ffffff',
+                              fontFamily: element.style?.fontFamily || 'Arial',
+                              fontWeight: element.style?.fontWeight || 'normal'
                             }}
-                            onMouseDown={(e) => handleMouseDown(e, element.id, 'drag')}
                           >
-                            {element.type === 'text' && (
-                              <div
-                                className="w-full h-full flex items-center justify-center text-center break-words"
-                                style={{
-                                  fontSize: element.style?.fontSize || 16,
-                                  color: element.style?.color || '#ffffff',
-                                  fontFamily: element.style?.fontFamily || 'Arial',
-                                  fontWeight: element.style?.fontWeight || 'normal'
-                                }}
-                              >
-                                {element.content}
-                              </div>
-                            )}
-                            
-                            {element.type === 'emoji' && (
-                              <div
-                                className="w-full h-full flex items-center justify-center"
-                                style={{ fontSize: element.height * 0.8 }}
-                              >
-                                {element.content}
-                              </div>
-                            )}
-                            
-                            {element.type === 'image' && element.imageData && (
-                              <img
-                                src={element.imageData}
-                                alt={element.content}
-                                className="w-full h-full object-cover rounded"
-                                draggable={false}
-                              />
-                            )}
-                            
-                            {/* Resize handle */}
-                            {selectedElement === element.id && (
-                              <div
-                                className="absolute bottom-0 right-0 w-3 h-3 bg-secondary rounded-full cursor-se-resize transform translate-x-1 translate-y-1"
-                                onMouseDown={(e) => handleMouseDown(e, element.id, 'resize')}
-                              />
-                            )}
-                          </div>
-                        ))}
-                        
-                        {elements.length === 0 && (
-                          <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-sm">
-                            Add elements to start creating
+                            {element.content}
                           </div>
                         )}
+                        
+                        {element.type === 'emoji' && (
+                          <div
+                            className="w-full h-full flex items-center justify-center"
+                            style={{ fontSize: element.height * 0.8 }}
+                          >
+                            {element.content}
+                          </div>
+                        )}
+                        
+                        {element.type === 'image' && element.imageData && (
+                          <img
+                            src={element.imageData}
+                            alt={element.content}
+                            className="w-full h-full object-cover rounded"
+                            draggable={false}
+                          />
+                        )}
+                        
+                        {/* Resize handle */}
+                        {selectedElement === element.id && (
+                          <div
+                            className="absolute bottom-0 right-0 w-3 h-3 bg-secondary rounded-full cursor-se-resize transform translate-x-1 translate-y-1"
+                            onMouseDown={(e) => handleMouseDown(e, element.id, 'resize')}
+                          />
+                        )}
                       </div>
-                    </div>
+                    ))}
+                    
+                    {elements.length === 0 && (
+                      <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-sm">
+                        Add elements to start creating
+                      </div>
+                    )}
                   </div>
+
+                  {/* Delete Button */}
+                  {selectedElement && (
+                    <button
+                      onClick={deleteSelectedElement}
+                      className="w-full bg-red-500 text-white rounded-lg py-2 font-semibold hover:bg-red-600 transition-colors mb-4"
+                    >
+                      <div className="flex items-center justify-center space-x-2">
+                        <Trash2 size={16} />
+                        <span>Delete Selected Element</span>
+                      </div>
+                    </button>
+                  )}
                 </div>
 
                 {/* Tools */}
@@ -845,7 +619,7 @@ export const StickersView = () => {
                     </button>
                   </div>
 
-                  {/* Emoji Picker - Restored Previous Version */}
+                  {/* Emoji Picker */}
                   {showEmojiPicker && (
                     <div className="bg-dark-light rounded-lg p-3 border border-gray-700 mb-4">
                       <div className="max-h-48 overflow-y-auto">
