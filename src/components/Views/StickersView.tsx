@@ -1,24 +1,29 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '../../store/useStore';
 import { 
   Plus, 
-  Image, 
   Type, 
+  Image, 
   Smile, 
   Save, 
-  X, 
-  ChevronUp, 
-  ChevronDown, 
+  Trash2, 
+  RotateCcw, 
   Move, 
-  RotateCw, 
   Palette,
-  Package,
-  ShoppingBag,
+  Search,
   Star,
+  Crown,
+  ShoppingCart,
+  Package,
+  Grid,
+  Eye,
   Download,
-  Trash2,
-  RefreshCw
+  Share2,
+  ChevronUp,
+  ChevronDown,
+  Layers,
+  X
 } from 'lucide-react';
 import { Sticker, StickerElement } from '../../types';
 import toast from 'react-hot-toast';
@@ -31,121 +36,157 @@ export const StickersView = () => {
     stickerPacks, 
     addStickerToPack, 
     updateStickerPack,
-    addStickerPack,
     purchaseStickerPack,
-    currentUser
+    currentUser 
   } = useStore();
   
-  // Main state
-  const [activeTab, setActiveTab] = useState<'create' | 'my-stickers' | 'my-packs' | 'explore'>('create');
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showSaveModal, setShowSaveModal] = useState(false);
+  // Tab state
+  const [activeTab, setActiveTab] = useState<'my-stickers' | 'my-packs' | 'explore' | 'create'>('create');
   
   // Canvas state
   const [elements, setElements] = useState<StickerElement[]>([]);
   const [selectedElement, setSelectedElement] = useState<string | null>(null);
-  const [currentLayer, setCurrentLayer] = useState(1);
-  const [isDragging, setIsDragging] = useState(false);
+  const [draggedElement, setDraggedElement] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [isResizing, setIsResizing] = useState(false);
+  const [resizeHandle, setResizeHandle] = useState<string>('');
+  const [currentLayer, setCurrentLayer] = useState(1);
   
-  // Save modal state
+  // UI state
+  const [showSaveModal, setShowSaveModal] = useState(false);
   const [stickerName, setStickerName] = useState('');
   const [selectedPack, setSelectedPack] = useState('pack-default');
   const [newPackName, setNewPackName] = useState('');
   const [createNewPack, setCreateNewPack] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
   
-  // Canvas ref
+  // Refs
   const canvasRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Emoji categories
+  const emojiCategories = {
+    'Faces': ['😀', '😂', '😍', '🤔', '😎', '🤯', '😈', '🤡', '👻', '💀'],
+    'Animals': ['🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯'],
+    'Food': ['🍎', '🍕', '🍔', '🍟', '🌭', '🍿', '🧁', '🍭', '🍩', '🍪'],
+    'Objects': ['⚽', '🎮', '🎸', '🎨', '📱', '💻', '🚗', '✈️', '🚀', '⭐'],
+  };
 
-  // Get owned sticker packs
-  const ownedPacks = stickerPacks.filter(pack => pack.owned);
-  const explorePacks = stickerPacks.filter(pack => !pack.owned);
+  // Mock marketplace packs
+  const marketplacePacks = [
+    {
+      id: 'pack-roast-masters',
+      name: 'Roast Masters',
+      description: 'Ultimate roasting collection',
+      category: 'roast' as const,
+      count: 25,
+      price: 500,
+      rating: 4.8,
+      users: 1234,
+      owned: false,
+      preview: ['🔥', '💀', '😈', '👹'],
+      creator: 'RoastKing'
+    },
+    {
+      id: 'pack-wholesome',
+      name: 'Wholesome Vibes',
+      description: 'Spread good energy',
+      category: 'wholesome' as const,
+      count: 30,
+      price: 300,
+      rating: 4.9,
+      users: 2156,
+      owned: false,
+      preview: ['🌸', '💖', '🌈', '✨'],
+      creator: 'WholesomeQueen'
+    },
+    {
+      id: 'pack-meme-lords',
+      name: 'Meme Lords',
+      description: 'Elite meme collection',
+      category: 'meme' as const,
+      count: 40,
+      price: 750,
+      rating: 4.7,
+      users: 987,
+      owned: true,
+      preview: ['🐸', '📈', '💎', '🚀'],
+      creator: 'MemeLord42'
+    }
+  ];
 
-  // FIXED: Layer management with proper z-index
+  // Get user's created stickers
+  const myStickers = stickers.filter(sticker => sticker.createdBy === currentUser?.id);
+  
+  // Get user's owned packs
+  const myPacks = stickerPacks.filter(pack => pack.owned);
+
+  // Filter functions
+  const filteredMyStickers = myStickers.filter(sticker =>
+    sticker.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    sticker.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
+
+  const filteredMarketplacePacks = marketplacePacks.filter(pack =>
+    pack.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    pack.description.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // FIXED: Layer navigation with proper bounds checking
   const getMinLayer = () => 1;
   const getMaxLayer = () => Math.max(1, elements.length);
   
-  const getCurrentElement = () => {
-    return elements.find(el => el.layer === currentLayer);
+  const getCurrentLayerElement = () => {
+    const sortedElements = [...elements].sort((a, b) => a.layer - b.layer);
+    return sortedElements[currentLayer - 1] || null;
   };
 
-  const updateElementLayer = (elementId: string, newLayer: number) => {
-    // Ensure layer is within bounds
+  const navigateLayer = (direction: 'up' | 'down') => {
     const minLayer = getMinLayer();
     const maxLayer = getMaxLayer();
-    const boundedLayer = Math.max(minLayer, Math.min(maxLayer, newLayer));
     
-    setElements(prev => {
-      const newElements = [...prev];
-      
-      // Find the element to move
-      const elementIndex = newElements.findIndex(el => el.id === elementId);
-      if (elementIndex === -1) return prev;
-      
-      const element = newElements[elementIndex];
-      const oldLayer = element.layer;
-      
-      // Update all elements' layers to maintain proper z-index order
-      newElements.forEach(el => {
-        if (el.id === elementId) {
-          el.layer = boundedLayer;
-        } else if (boundedLayer > oldLayer) {
-          // Moving forward: shift elements between old and new layer backward
-          if (el.layer > oldLayer && el.layer <= boundedLayer) {
-            el.layer = Math.max(1, el.layer - 1);
-          }
-        } else if (boundedLayer < oldLayer) {
-          // Moving backward: shift elements between new and old layer forward
-          if (el.layer >= boundedLayer && el.layer < oldLayer) {
-            el.layer = Math.min(elements.length, el.layer + 1);
-          }
-        }
-      });
-      
-      return newElements;
-    });
+    if (direction === 'up' && currentLayer < maxLayer) {
+      const newLayer = currentLayer + 1;
+      setCurrentLayer(newLayer);
+      const element = getCurrentLayerElementByIndex(newLayer);
+      if (element) {
+        setSelectedElement(element.id);
+      }
+    } else if (direction === 'down' && currentLayer > minLayer) {
+      const newLayer = currentLayer - 1;
+      setCurrentLayer(newLayer);
+      const element = getCurrentLayerElementByIndex(newLayer);
+      if (element) {
+        setSelectedElement(element.id);
+      }
+    }
+  };
+
+  const getCurrentLayerElementByIndex = (layerIndex: number) => {
+    const sortedElements = [...elements].sort((a, b) => a.layer - b.layer);
+    return sortedElements[layerIndex - 1] || null;
+  };
+
+  const setLayerDirectly = (layer: number) => {
+    const minLayer = getMinLayer();
+    const maxLayer = getMaxLayer();
+    const boundedLayer = Math.max(minLayer, Math.min(maxLayer, layer));
     
     setCurrentLayer(boundedLayer);
-  };
-
-  const moveLayerUp = () => {
-    const currentElement = getCurrentElement();
-    if (currentElement && currentLayer < getMaxLayer()) {
-      updateElementLayer(currentElement.id, currentLayer + 1);
-    }
-  };
-
-  const moveLayerDown = () => {
-    const currentElement = getCurrentElement();
-    if (currentElement && currentLayer > getMinLayer()) {
-      updateElementLayer(currentElement.id, currentLayer - 1);
-    }
-  };
-
-  const setLayerNumber = (layer: number) => {
-    const currentElement = getCurrentElement();
-    if (currentElement) {
-      updateElementLayer(currentElement.id, layer);
-    }
-  };
-
-  // FIXED: Click to select element and show properties
-  const selectElement = (elementId: string) => {
-    const element = elements.find(el => el.id === elementId);
+    const element = getCurrentLayerElementByIndex(boundedLayer);
     if (element) {
-      setSelectedElement(elementId);
-      setCurrentLayer(element.layer);
+      setSelectedElement(element.id);
     }
   };
 
   // Add element functions
-  const addTextElement = () => {
+  const addText = () => {
     const newElement: StickerElement = {
       id: `text-${Date.now()}`,
       type: 'text',
-      content: 'Your Text',
-      x: 100,
-      y: 100,
+      content: 'New Text',
+      x: 50,
+      y: 50,
       width: 120,
       height: 40,
       rotation: 0,
@@ -154,25 +195,24 @@ export const StickersView = () => {
       layer: elements.length + 1,
       style: {
         fontSize: 24,
-        color: '#ffffff',
+        color: '#FF6B9D',
         fontFamily: 'Arial',
         fontWeight: 'bold',
       },
     };
     
-    setElements(prev => [...prev, newElement]);
+    setElements([...elements, newElement]);
     setSelectedElement(newElement.id);
     setCurrentLayer(newElement.layer);
-    setShowCreateModal(false);
   };
 
-  const addEmojiElement = (emoji: string) => {
+  const addEmoji = (emoji: string) => {
     const newElement: StickerElement = {
       id: `emoji-${Date.now()}`,
       type: 'emoji',
       content: emoji,
-      x: 120,
-      y: 120,
+      x: 100,
+      y: 100,
       width: 60,
       height: 60,
       rotation: 0,
@@ -181,32 +221,157 @@ export const StickersView = () => {
       layer: elements.length + 1,
     };
     
-    setElements(prev => [...prev, newElement]);
+    setElements([...elements, newElement]);
     setSelectedElement(newElement.id);
     setCurrentLayer(newElement.layer);
-    setShowCreateModal(false);
   };
 
-  const addImageElement = () => {
-    const newElement: StickerElement = {
-      id: `image-${Date.now()}`,
-      type: 'image',
-      content: 'https://images.pexels.com/photos/1108099/pexels-photo-1108099.jpeg?auto=compress&cs=tinysrgb&w=200',
-      x: 80,
-      y: 80,
-      width: 100,
-      height: 100,
-      rotation: 0,
-      flipX: false,
-      flipY: false,
-      layer: elements.length + 1,
-    };
-    
-    setElements(prev => [...prev, newElement]);
-    setSelectedElement(newElement.id);
-    setCurrentLayer(newElement.layer);
-    setShowCreateModal(false);
+  const addImage = () => {
+    fileInputRef.current?.click();
   };
+
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const imageData = e.target?.result as string;
+        const newElement: StickerElement = {
+          id: `image-${Date.now()}`,
+          type: 'image',
+          content: file.name,
+          x: 75,
+          y: 75,
+          width: 100,
+          height: 100,
+          rotation: 0,
+          flipX: false,
+          flipY: false,
+          layer: elements.length + 1,
+          imageData,
+        };
+        
+        setElements([...elements, newElement]);
+        setSelectedElement(newElement.id);
+        setCurrentLayer(newElement.layer);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // FIXED: Click handler to show properties panel
+  const handleElementClick = (elementId: string, event: React.MouseEvent) => {
+    event.stopPropagation();
+    setSelectedElement(elementId);
+    
+    // Find the element and set current layer
+    const element = elements.find(el => el.id === elementId);
+    if (element) {
+      setCurrentLayer(element.layer);
+    }
+  };
+
+  // Mouse event handlers for dragging and resizing
+  const handleMouseDown = (elementId: string, event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    
+    const target = event.target as HTMLElement;
+    const isResizeHandle = target.classList.contains('resize-handle');
+    
+    if (isResizeHandle) {
+      setIsResizing(true);
+      setResizeHandle(target.dataset.handle || '');
+      setSelectedElement(elementId);
+    } else {
+      setDraggedElement(elementId);
+      setSelectedElement(elementId);
+      
+      const element = elements.find(el => el.id === elementId);
+      if (element) {
+        setCurrentLayer(element.layer);
+        const rect = event.currentTarget.getBoundingClientRect();
+        setDragOffset({
+          x: event.clientX - rect.left,
+          y: event.clientY - rect.top,
+        });
+      }
+    }
+  };
+
+  const handleMouseMove = useCallback((event: MouseEvent) => {
+    if (draggedElement && canvasRef.current) {
+      const canvasRect = canvasRef.current.getBoundingClientRect();
+      const newX = event.clientX - canvasRect.left - dragOffset.x;
+      const newY = event.clientY - canvasRect.top - dragOffset.y;
+      
+      setElements(prev => prev.map(el => 
+        el.id === draggedElement 
+          ? { ...el, x: Math.max(0, newX), y: Math.max(0, newY) }
+          : el
+      ));
+    }
+    
+    if (isResizing && selectedElement && canvasRef.current) {
+      const canvasRect = canvasRef.current.getBoundingClientRect();
+      const mouseX = event.clientX - canvasRect.left;
+      const mouseY = event.clientY - canvasRect.top;
+      
+      setElements(prev => prev.map(el => {
+        if (el.id === selectedElement) {
+          const newEl = { ...el };
+          
+          switch (resizeHandle) {
+            case 'se':
+              newEl.width = Math.max(20, mouseX - el.x);
+              newEl.height = Math.max(20, mouseY - el.y);
+              break;
+            case 'sw':
+              const newWidth = Math.max(20, el.x + el.width - mouseX);
+              newEl.x = el.x + el.width - newWidth;
+              newEl.width = newWidth;
+              newEl.height = Math.max(20, mouseY - el.y);
+              break;
+            case 'ne':
+              newEl.width = Math.max(20, mouseX - el.x);
+              const newHeight = Math.max(20, el.y + el.height - mouseY);
+              newEl.y = el.y + el.height - newHeight;
+              newEl.height = newHeight;
+              break;
+            case 'nw':
+              const newW = Math.max(20, el.x + el.width - mouseX);
+              const newH = Math.max(20, el.y + el.height - mouseY);
+              newEl.x = el.x + el.width - newW;
+              newEl.y = el.y + el.height - newH;
+              newEl.width = newW;
+              newEl.height = newH;
+              break;
+          }
+          
+          return newEl;
+        }
+        return el;
+      }));
+    }
+  }, [draggedElement, dragOffset, isResizing, selectedElement, resizeHandle]);
+
+  const handleMouseUp = useCallback(() => {
+    setDraggedElement(null);
+    setIsResizing(false);
+    setResizeHandle('');
+  }, []);
+
+  useEffect(() => {
+    if (draggedElement || isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [draggedElement, isResizing, handleMouseMove, handleMouseUp]);
 
   // Update element properties
   const updateElement = (elementId: string, updates: Partial<StickerElement>) => {
@@ -215,30 +380,24 @@ export const StickersView = () => {
     ));
   };
 
-  // Delete element
   const deleteElement = (elementId: string) => {
     setElements(prev => {
-      const newElements = prev.filter(el => el.id !== elementId);
-      // Reorder layers after deletion
-      return newElements.map((el, index) => ({ ...el, layer: index + 1 }));
+      const filtered = prev.filter(el => el.id !== elementId);
+      // Reassign layers to maintain continuity
+      return filtered.map((el, index) => ({ ...el, layer: index + 1 }));
     });
-    
-    if (selectedElement === elementId) {
-      setSelectedElement(null);
-      setCurrentLayer(1);
-    }
+    setSelectedElement(null);
+    setCurrentLayer(1);
   };
 
-  // FIXED: Clear all elements
-  const clearAllElements = () => {
+  const clearCanvas = () => {
     setElements([]);
     setSelectedElement(null);
     setCurrentLayer(1);
-    toast.success('Canvas cleared! 🧹');
   };
 
-  // FIXED: Save sticker with proper feedback and no auto-clear
-  const handleSaveSticker = async () => {
+  // FIXED: Save sticker with proper feedback and canvas preservation
+  const handleSaveSticker = () => {
     if (elements.length === 0) {
       toast.error('Add some elements to your sticker first! 🎨');
       return;
@@ -249,130 +408,85 @@ export const StickersView = () => {
       return;
     }
 
-    try {
-      let targetPackId = selectedPack;
-      
-      // Create new pack if requested
-      if (createNewPack && newPackName.trim()) {
-        const newPack = {
-          id: `pack-${Date.now()}`,
-          name: newPackName.trim(),
-          description: 'Custom sticker pack',
-          stickers: [],
-          category: 'custom' as const,
-          count: 0,
-          owned: true,
-          price: 0,
-          createdBy: currentUser?.id || 'user-1',
-          createdAt: new Date(),
-        };
-        
-        addStickerPack(newPack);
-        targetPackId = newPack.id;
-      }
+    // Create the sticker
+    const newSticker: Sticker = {
+      id: `sticker-${Date.now()}`,
+      name: stickerName.trim(),
+      imageUrl: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48dGV4dCB4PSI1MCIgeT0iNTAiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyMCIgZmlsbD0iIzMzMzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZG9taW5hbnQtYmFzZWxpbmU9Im1pZGRsZSI+8J+OqDwvdGV4dD48L3N2Zz4=',
+      tags: ['custom', 'handmade'],
+      createdBy: currentUser?.id || 'user-1',
+      usageCount: 0,
+      elementData: elements,
+    };
 
-      // Create the sticker
-      const newSticker: Sticker = {
-        id: `sticker-${Date.now()}`,
-        name: stickerName.trim(),
-        imageUrl: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmY2YjlkIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyMCIgZmlsbD0id2hpdGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TdGlja2VyPC90ZXh0Pjwvc3ZnPg==',
-        tags: ['custom', 'handmade'],
+    // Handle pack selection
+    if (createNewPack && newPackName.trim()) {
+      // Create new pack
+      const newPack = {
+        id: `pack-${Date.now()}`,
+        name: newPackName.trim(),
+        description: `Custom pack created by ${currentUser?.username}`,
+        stickers: [newSticker],
+        category: 'custom' as const,
+        count: 1,
+        owned: true,
+        price: 0,
         createdBy: currentUser?.id || 'user-1',
-        usageCount: 0,
-        packId: targetPackId,
-        elementData: elements, // Store the element data for editing
+        createdAt: new Date(),
       };
-
-      // Add sticker to the pack
-      addStickerToPack(newSticker, targetPackId);
-      updateUserPoints(10);
-
-      // FIXED: Show success message and close modal with delay
-      toast.success(`✨ Sticker '${stickerName}' saved successfully! (+10 CP)`, {
-        duration: 4000,
-        icon: '🎨',
-      });
-
-      // Close modal after short delay
-      setTimeout(() => {
-        setShowSaveModal(false);
-        // Reset only the save form, NOT the canvas
-        setStickerName('');
-        setNewPackName('');
-        setCreateNewPack(false);
-        setSelectedPack('pack-default');
-      }, 1500);
-
-    } catch (error) {
-      console.error('Error saving sticker:', error);
-      toast.error('Failed to save sticker! Please try again. 😞');
+      
+      updateStickerPack(newPack.id, newPack);
+      addStickerToPack(newSticker, newPack.id);
+    } else {
+      // Add to existing pack
+      addStickerToPack(newSticker, selectedPack);
     }
+
+    // Add sticker to global collection
+    addSticker(newSticker);
+    updateUserPoints(10);
+
+    // FIXED: Show success message and keep canvas intact
+    toast.success(`✨ Sticker "${stickerName}" saved successfully! (+10 CP)`, {
+      duration: 4000,
+      icon: '🎨',
+    });
+
+    // Close modal and reset form (but keep canvas)
+    setShowSaveModal(false);
+    setStickerName('');
+    setNewPackName('');
+    setCreateNewPack(false);
+    setSelectedPack('pack-default');
   };
 
-  // Mouse event handlers for dragging
-  const handleMouseDown = (e: React.MouseEvent, elementId: string) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const purchasePack = (packId: string, price: number) => {
+    if (!currentUser) return;
     
-    const element = elements.find(el => el.id === elementId);
-    if (!element) return;
-    
-    // Select the element
-    selectElement(elementId);
-    
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    
-    const offsetX = e.clientX - rect.left - element.x;
-    const offsetY = e.clientY - rect.top - element.y;
-    
-    setIsDragging(true);
-    setDragOffset({ x: offsetX, y: offsetY });
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging || !selectedElement) return;
-    
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    
-    const newX = e.clientX - rect.left - dragOffset.x;
-    const newY = e.clientY - rect.top - dragOffset.y;
-    
-    updateElement(selectedElement, { x: newX, y: newY });
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-    setDragOffset({ x: 0, y: 0 });
-  };
-
-  // Purchase sticker pack
-  const handlePurchasePack = (packId: string) => {
-    const pack = stickerPacks.find(p => p.id === packId);
-    if (!pack || !currentUser) return;
-    
-    if (currentUser.clownPoints < pack.price) {
-      toast.error(`Not enough ClownPoints! Need ${pack.price} CP. 💰`);
+    if (currentUser.clownPoints < price) {
+      toast.error(`Not enough ClownPoints! You need ${price} CP but only have ${currentUser.clownPoints} CP 💰`);
       return;
     }
     
     purchaseStickerPack(packId, currentUser.id);
-    toast.success(`🎉 ${pack.name} pack purchased! (+${pack.count} stickers)`);
+    updateUserPoints(-price);
+    toast.success(`Pack purchased! 🛍️ (-${price} CP)`);
   };
 
   const selectedElementData = selectedElement ? elements.find(el => el.id === selectedElement) : null;
 
-  const emojiOptions = ['😀', '😂', '😍', '🤔', '😎', '🤯', '😈', '🤡', '👻', '💀', '🔥', '💯', '⚡', '💎', '🌟', '✨', '🎉', '🎊', '🎈', '🎁', '🎪', '🎭', '🎨', '🚀', '💫', '⭐', '🌈', '🦄', '🐉', '👑'];
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-dark via-secondary/10 to-dark paper-texture relative overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-dark via-dark-light to-dark paper-texture relative overflow-hidden">
       {/* Artistic Background */}
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute top-16 left-12 text-3xl opacity-15 animate-float">🎨</div>
         <div className="absolute top-32 right-20 text-2xl opacity-20 animate-bounce-slow">✨</div>
         <div className="absolute bottom-32 left-16 text-4xl opacity-10 animate-wiggle">🖌️</div>
-        <div className="absolute bottom-16 right-12 text-2xl opacity-15 animate-pulse">🎭</div>
+        <div className="absolute bottom-16 right-12 text-2xl opacity-15 animate-pulse">🌟</div>
+        
+        {/* Floating art supplies */}
+        <div className="absolute top-1/3 left-1/4 w-24 h-24 bg-secondary/5 rounded-full blur-xl animate-pulse" />
+        <div className="absolute bottom-1/4 right-1/3 w-20 h-20 bg-primary/5 rounded-full blur-lg animate-float" />
       </div>
 
       <div className="relative z-10 p-4 pb-20">
@@ -381,9 +495,9 @@ export const StickersView = () => {
           <div className="flex bg-dark-card rounded-xl p-1 mb-6 overflow-x-auto">
             {[
               { id: 'create', label: 'Create', icon: Plus },
-              { id: 'my-stickers', label: 'My Stickers', icon: Package },
-              { id: 'my-packs', label: 'My Packs', icon: Star },
-              { id: 'explore', label: 'Explore Packs', icon: ShoppingBag },
+              { id: 'my-stickers', label: 'My Stickers', icon: Grid },
+              { id: 'my-packs', label: 'My Packs', icon: Package },
+              { id: 'explore', label: 'Explore Packs', icon: Eye },
             ].map((tab) => {
               const Icon = tab.icon;
               return (
@@ -392,7 +506,7 @@ export const StickersView = () => {
                   onClick={() => setActiveTab(tab.id as any)}
                   className={`flex items-center justify-center space-x-2 py-3 px-4 rounded-lg transition-all whitespace-nowrap ${
                     activeTab === tab.id
-                      ? 'bg-secondary text-white'
+                      ? 'bg-primary text-white'
                       : 'text-gray-400 hover:text-white'
                   }`}
                 >
@@ -411,60 +525,101 @@ export const StickersView = () => {
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
-                className="grid grid-cols-1 lg:grid-cols-3 gap-6"
+                className="grid grid-cols-1 lg:grid-cols-4 gap-6"
               >
-                {/* Canvas Area */}
-                <div className="lg:col-span-2">
-                  <div className="bg-dark-card rounded-xl p-6 border border-gray-800">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-white font-bold text-lg">Sticker Canvas</h3>
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => setShowCreateModal(true)}
-                          className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-secondary/90 transition-colors flex items-center space-x-2"
-                        >
-                          <Plus size={16} />
-                          <span>Add Element</span>
-                        </button>
-                        <button
-                          onClick={clearAllElements}
-                          className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors flex items-center space-x-2"
-                        >
-                          <RefreshCw size={16} />
-                          <span>Clear All</span>
-                        </button>
-                        <button
-                          onClick={() => setShowSaveModal(true)}
-                          disabled={elements.length === 0}
-                          className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
-                        >
-                          <Save size={16} />
-                          <span>Save Sticker</span>
-                        </button>
-                      </div>
-                    </div>
+                {/* Tools Panel */}
+                <div className="lg:col-span-1 space-y-4">
+                  {/* Add Elements */}
+                  <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
+                    <h3 className="text-white font-bold mb-3 font-sketch">Add Elements</h3>
                     
-                    {/* Canvas */}
-                    <div 
-                      ref={canvasRef}
-                      className="relative w-full h-96 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg border-2 border-dashed border-gray-400 overflow-hidden"
-                      onMouseMove={handleMouseMove}
-                      onMouseUp={handleMouseUp}
-                      onMouseLeave={handleMouseUp}
-                    >
-                      {elements.length === 0 && (
-                        <div className="absolute inset-0 flex items-center justify-center text-gray-500">
-                          <div className="text-center">
-                            <div className="text-4xl mb-2">🎨</div>
-                            <p>Click "Add Element" to start creating!</p>
+                    <div className="space-y-3">
+                      <button
+                        onClick={addText}
+                        className="w-full flex items-center space-x-3 p-3 bg-dark-light rounded-lg hover:bg-gray-700 transition-colors"
+                      >
+                        <Type size={20} className="text-primary" />
+                        <span className="text-white font-hand">Add Text</span>
+                      </button>
+                      
+                      <button
+                        onClick={addImage}
+                        className="w-full flex items-center space-x-3 p-3 bg-dark-light rounded-lg hover:bg-gray-700 transition-colors"
+                      >
+                        <Image size={20} className="text-secondary" />
+                        <span className="text-white font-hand">Add Image</span>
+                      </button>
+                      
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        className="hidden"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Emoji Picker */}
+                  <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
+                    <h3 className="text-white font-bold mb-3 font-sketch">Emojis</h3>
+                    
+                    <div className="space-y-3 max-h-64 overflow-y-auto">
+                      {Object.entries(emojiCategories).map(([category, emojis]) => (
+                        <div key={category}>
+                          <h4 className="text-xs text-gray-400 font-hand mb-2">{category}</h4>
+                          <div className="grid grid-cols-5 gap-2">
+                            {emojis.map((emoji) => (
+                              <button
+                                key={emoji}
+                                onClick={() => addEmoji(emoji)}
+                                className="p-2 text-2xl hover:bg-gray-700 rounded-lg transition-colors"
+                              >
+                                {emoji}
+                              </button>
+                            ))}
                           </div>
                         </div>
-                      )}
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
+                    <h3 className="text-white font-bold mb-3 font-sketch">Actions</h3>
+                    
+                    <div className="space-y-2">
+                      <button
+                        onClick={() => setShowSaveModal(true)}
+                        disabled={elements.length === 0}
+                        className="w-full flex items-center justify-center space-x-2 p-3 bg-gradient-to-r from-primary to-purple text-white rounded-lg hover:from-primary/90 hover:to-purple/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Save size={16} />
+                        <span className="font-hand">Save Sticker</span>
+                      </button>
                       
-                      {/* Render elements with proper z-index based on layer */}
-                      {elements
-                        .sort((a, b) => a.layer - b.layer) // Sort by layer for proper z-index
-                        .map((element) => (
+                      <button
+                        onClick={clearCanvas}
+                        className="w-full flex items-center justify-center space-x-2 p-3 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                      >
+                        <RotateCcw size={16} />
+                        <span className="font-hand">Clear Canvas</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Canvas */}
+                <div className="lg:col-span-2">
+                  <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
+                    <h3 className="text-white font-bold mb-3 font-sketch">Sticker Canvas</h3>
+                    
+                    <div
+                      ref={canvasRef}
+                      className="relative w-full h-96 bg-white rounded-lg border-2 border-dashed border-gray-300 overflow-hidden cursor-crosshair"
+                      onClick={() => setSelectedElement(null)}
+                    >
+                      {elements.map((element) => (
                         <div
                           key={element.id}
                           className={`absolute cursor-move select-none ${
@@ -476,28 +631,19 @@ export const StickersView = () => {
                             width: element.width,
                             height: element.height,
                             transform: `rotate(${element.rotation}deg) scaleX(${element.flipX ? -1 : 1}) scaleY(${element.flipY ? -1 : 1})`,
-                            zIndex: element.layer, // FIXED: Proper z-index based on layer
+                            zIndex: element.layer,
                           }}
-                          onMouseDown={(e) => handleMouseDown(e, element.id)}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            selectElement(element.id); // FIXED: Click to select
-                          }}
+                          onMouseDown={(e) => handleMouseDown(element.id, e)}
+                          onClick={(e) => handleElementClick(element.id, e)}
                         >
                           {element.type === 'text' && (
                             <div
+                              className="w-full h-full flex items-center justify-center"
                               style={{
                                 fontSize: element.style?.fontSize || 24,
-                                color: element.style?.color || '#000000',
+                                color: element.style?.color || '#000',
                                 fontFamily: element.style?.fontFamily || 'Arial',
                                 fontWeight: element.style?.fontWeight || 'normal',
-                                width: '100%',
-                                height: '100%',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                textAlign: 'center',
-                                wordBreak: 'break-word',
                               }}
                             >
                               {element.content}
@@ -505,85 +651,94 @@ export const StickersView = () => {
                           )}
                           
                           {element.type === 'emoji' && (
-                            <div
-                              style={{
-                                fontSize: Math.min(element.width, element.height),
-                                width: '100%',
-                                height: '100%',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                              }}
-                            >
+                            <div className="w-full h-full flex items-center justify-center text-4xl">
                               {element.content}
                             </div>
                           )}
                           
-                          {element.type === 'image' && (
+                          {element.type === 'image' && element.imageData && (
                             <img
-                              src={element.content}
-                              alt="Sticker element"
-                              style={{
-                                width: '100%',
-                                height: '100%',
-                                objectFit: 'cover',
-                                borderRadius: '4px',
-                              }}
+                              src={element.imageData}
+                              alt={element.content}
+                              className="w-full h-full object-cover rounded"
                               draggable={false}
                             />
                           )}
+                          
+                          {/* Resize Handles */}
+                          {selectedElement === element.id && (
+                            <>
+                              <div className="resize-handle absolute -top-1 -left-1 w-3 h-3 bg-primary rounded-full cursor-nw-resize" data-handle="nw" />
+                              <div className="resize-handle absolute -top-1 -right-1 w-3 h-3 bg-primary rounded-full cursor-ne-resize" data-handle="ne" />
+                              <div className="resize-handle absolute -bottom-1 -left-1 w-3 h-3 bg-primary rounded-full cursor-sw-resize" data-handle="sw" />
+                              <div className="resize-handle absolute -bottom-1 -right-1 w-3 h-3 bg-primary rounded-full cursor-se-resize" data-handle="se" />
+                            </>
+                          )}
                         </div>
                       ))}
+                      
+                      {elements.length === 0 && (
+                        <div className="absolute inset-0 flex items-center justify-center text-gray-400">
+                          <div className="text-center">
+                            <div className="text-4xl mb-2">🎨</div>
+                            <p className="font-hand">Start creating your sticker!</p>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
 
                 {/* Properties Panel */}
-                <div className="space-y-4">
-                  {/* Layer Controls */}
-                  <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
-                    <h4 className="text-white font-semibold mb-3">Layer Controls</h4>
-                    
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-300 text-sm">Current Layer:</span>
+                <div className="lg:col-span-1 space-y-4">
+                  {/* Layer Navigation - FIXED */}
+                  {elements.length > 0 && (
+                    <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
+                      <h3 className="text-white font-bold mb-3 font-sketch flex items-center space-x-2">
+                        <Layers size={16} />
+                        <span>Layers</span>
+                      </h3>
+                      
+                      <div className="space-y-3">
                         <div className="flex items-center space-x-2">
                           <button
-                            onClick={moveLayerDown}
-                            disabled={currentLayer <= getMinLayer() || !getCurrentElement()}
-                            className="p-1 bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            onClick={() => navigateLayer('down')}
+                            disabled={currentLayer <= getMinLayer()}
+                            className="p-2 bg-dark-light rounded hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            <ChevronDown size={16} />
+                            <ChevronDown size={16} className="text-white" />
                           </button>
+                          
                           <input
                             type="number"
                             value={currentLayer}
-                            onChange={(e) => setLayerNumber(parseInt(e.target.value) || 1)}
+                            onChange={(e) => setLayerDirectly(parseInt(e.target.value) || 1)}
                             min={getMinLayer()}
                             max={getMaxLayer()}
-                            className="w-12 text-center bg-dark-light text-white rounded px-1 py-1 text-sm"
+                            className="flex-1 bg-dark-light text-white rounded px-2 py-1 text-center border border-gray-700 focus:border-primary focus:outline-none"
                           />
+                          
                           <button
-                            onClick={moveLayerUp}
-                            disabled={currentLayer >= getMaxLayer() || !getCurrentElement()}
-                            className="p-1 bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            onClick={() => navigateLayer('up')}
+                            disabled={currentLayer >= getMaxLayer()}
+                            className="p-2 bg-dark-light rounded hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            <ChevronUp size={16} />
+                            <ChevronUp size={16} className="text-white" />
                           </button>
                         </div>
-                      </div>
-                      
-                      <div className="text-xs text-gray-400">
-                        Total layers: {getMaxLayer()} | Range: {getMinLayer()}-{getMaxLayer()}
+                        
+                        <div className="text-xs text-gray-400 text-center font-hand">
+                          Layer {currentLayer} of {getMaxLayer()}
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
 
-                  {/* Element Properties */}
+                  {/* Element Properties - FIXED: Shows on click */}
                   {selectedElementData && (
                     <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
                       <div className="flex items-center justify-between mb-3">
-                        <h4 className="text-white font-semibold">Element Properties</h4>
+                        <h3 className="text-white font-bold font-sketch">Properties</h3>
                         <button
                           onClick={() => deleteElement(selectedElementData.id)}
                           className="p-1 text-red-400 hover:text-red-300 transition-colors"
@@ -595,20 +750,20 @@ export const StickersView = () => {
                       <div className="space-y-3">
                         {/* Position */}
                         <div>
-                          <label className="block text-gray-300 text-sm mb-1">Position</label>
+                          <label className="block text-xs text-gray-400 mb-1 font-hand">Position</label>
                           <div className="grid grid-cols-2 gap-2">
                             <input
                               type="number"
                               value={Math.round(selectedElementData.x)}
                               onChange={(e) => updateElement(selectedElementData.id, { x: parseInt(e.target.value) || 0 })}
-                              className="bg-dark-light text-white rounded px-2 py-1 text-sm"
+                              className="bg-dark-light text-white rounded px-2 py-1 text-sm border border-gray-700 focus:border-primary focus:outline-none"
                               placeholder="X"
                             />
                             <input
                               type="number"
                               value={Math.round(selectedElementData.y)}
                               onChange={(e) => updateElement(selectedElementData.id, { y: parseInt(e.target.value) || 0 })}
-                              className="bg-dark-light text-white rounded px-2 py-1 text-sm"
+                              className="bg-dark-light text-white rounded px-2 py-1 text-sm border border-gray-700 focus:border-primary focus:outline-none"
                               placeholder="Y"
                             />
                           </div>
@@ -616,30 +771,71 @@ export const StickersView = () => {
 
                         {/* Size */}
                         <div>
-                          <label className="block text-gray-300 text-sm mb-1">Size</label>
+                          <label className="block text-xs text-gray-400 mb-1 font-hand">Size</label>
                           <div className="grid grid-cols-2 gap-2">
                             <input
                               type="number"
                               value={Math.round(selectedElementData.width)}
-                              onChange={(e) => updateElement(selectedElementData.id, { width: parseInt(e.target.value) || 1 })}
-                              className="bg-dark-light text-white rounded px-2 py-1 text-sm"
-                              placeholder="Width"
-                              min="1"
+                              onChange={(e) => updateElement(selectedElementData.id, { width: Math.max(20, parseInt(e.target.value) || 20) })}
+                              className="bg-dark-light text-white rounded px-2 py-1 text-sm border border-gray-700 focus:border-primary focus:outline-none"
+                              placeholder="W"
+                              min="20"
                             />
                             <input
                               type="number"
                               value={Math.round(selectedElementData.height)}
-                              onChange={(e) => updateElement(selectedElementData.id, { height: parseInt(e.target.value) || 1 })}
-                              className="bg-dark-light text-white rounded px-2 py-1 text-sm"
-                              placeholder="Height"
-                              min="1"
+                              onChange={(e) => updateElement(selectedElementData.id, { height: Math.max(20, parseInt(e.target.value) || 20) })}
+                              className="bg-dark-light text-white rounded px-2 py-1 text-sm border border-gray-700 focus:border-primary focus:outline-none"
+                              placeholder="H"
+                              min="20"
                             />
                           </div>
                         </div>
 
+                        {/* Text Properties */}
+                        {selectedElementData.type === 'text' && (
+                          <>
+                            <div>
+                              <label className="block text-xs text-gray-400 mb-1 font-hand">Text</label>
+                              <input
+                                type="text"
+                                value={selectedElementData.content}
+                                onChange={(e) => updateElement(selectedElementData.id, { content: e.target.value })}
+                                className="w-full bg-dark-light text-white rounded px-2 py-1 text-sm border border-gray-700 focus:border-primary focus:outline-none"
+                              />
+                            </div>
+                            
+                            <div>
+                              <label className="block text-xs text-gray-400 mb-1 font-hand">Font Size</label>
+                              <input
+                                type="number"
+                                value={selectedElementData.style?.fontSize || 24}
+                                onChange={(e) => updateElement(selectedElementData.id, { 
+                                  style: { ...selectedElementData.style, fontSize: parseInt(e.target.value) || 24 }
+                                })}
+                                className="w-full bg-dark-light text-white rounded px-2 py-1 text-sm border border-gray-700 focus:border-primary focus:outline-none"
+                                min="8"
+                                max="72"
+                              />
+                            </div>
+                            
+                            <div>
+                              <label className="block text-xs text-gray-400 mb-1 font-hand">Color</label>
+                              <input
+                                type="color"
+                                value={selectedElementData.style?.color || '#FF6B9D'}
+                                onChange={(e) => updateElement(selectedElementData.id, { 
+                                  style: { ...selectedElementData.style, color: e.target.value }
+                                })}
+                                className="w-full h-8 bg-dark-light rounded border border-gray-700 focus:border-primary focus:outline-none"
+                              />
+                            </div>
+                          </>
+                        )}
+
                         {/* Rotation */}
                         <div>
-                          <label className="block text-gray-300 text-sm mb-1">Rotation</label>
+                          <label className="block text-xs text-gray-400 mb-1 font-hand">Rotation</label>
                           <input
                             type="range"
                             min="-180"
@@ -648,87 +844,37 @@ export const StickersView = () => {
                             onChange={(e) => updateElement(selectedElementData.id, { rotation: parseInt(e.target.value) })}
                             className="w-full"
                           />
-                          <div className="text-center text-xs text-gray-400 mt-1">
+                          <div className="text-xs text-gray-400 text-center font-hand">
                             {selectedElementData.rotation}°
                           </div>
                         </div>
 
-                        {/* Text-specific properties */}
-                        {selectedElementData.type === 'text' && (
-                          <>
-                            <div>
-                              <label className="block text-gray-300 text-sm mb-1">Text Content</label>
-                              <input
-                                type="text"
-                                value={selectedElementData.content}
-                                onChange={(e) => updateElement(selectedElementData.id, { content: e.target.value })}
-                                className="w-full bg-dark-light text-white rounded px-2 py-1 text-sm"
-                              />
-                            </div>
-                            
-                            <div>
-                              <label className="block text-gray-300 text-sm mb-1">Font Size</label>
-                              <input
-                                type="number"
-                                value={selectedElementData.style?.fontSize || 24}
-                                onChange={(e) => updateElement(selectedElementData.id, { 
-                                  style: { ...selectedElementData.style, fontSize: parseInt(e.target.value) || 24 }
-                                })}
-                                className="w-full bg-dark-light text-white rounded px-2 py-1 text-sm"
-                                min="8"
-                                max="72"
-                              />
-                            </div>
-                            
-                            <div>
-                              <label className="block text-gray-300 text-sm mb-1">Color</label>
-                              <input
-                                type="color"
-                                value={selectedElementData.style?.color || '#ffffff'}
-                                onChange={(e) => updateElement(selectedElementData.id, { 
-                                  style: { ...selectedElementData.style, color: e.target.value }
-                                })}
-                                className="w-full h-8 bg-dark-light rounded"
-                              />
-                            </div>
-                          </>
-                        )}
-
-                        {/* Flip controls */}
+                        {/* Flip */}
                         <div>
-                          <label className="block text-gray-300 text-sm mb-2">Flip</label>
+                          <label className="block text-xs text-gray-400 mb-1 font-hand">Flip</label>
                           <div className="flex space-x-2">
                             <button
                               onClick={() => updateElement(selectedElementData.id, { flipX: !selectedElementData.flipX })}
-                              className={`flex-1 py-1 px-2 rounded text-sm transition-colors ${
+                              className={`flex-1 py-1 px-2 rounded text-xs transition-colors ${
                                 selectedElementData.flipX 
                                   ? 'bg-primary text-white' 
-                                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                  : 'bg-dark-light text-gray-400 hover:text-white'
                               }`}
                             >
                               Flip X
                             </button>
                             <button
                               onClick={() => updateElement(selectedElementData.id, { flipY: !selectedElementData.flipY })}
-                              className={`flex-1 py-1 px-2 rounded text-sm transition-colors ${
+                              className={`flex-1 py-1 px-2 rounded text-xs transition-colors ${
                                 selectedElementData.flipY 
                                   ? 'bg-primary text-white' 
-                                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                  : 'bg-dark-light text-gray-400 hover:text-white'
                               }`}
                             >
                               Flip Y
                             </button>
                           </div>
                         </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {!selectedElementData && (
-                    <div className="bg-dark-card rounded-xl p-4 border border-gray-800 text-center">
-                      <div className="text-gray-400">
-                        <Move size={32} className="mx-auto mb-2 opacity-50" />
-                        <p className="text-sm">Click on an element to edit its properties</p>
                       </div>
                     </div>
                   )}
@@ -743,25 +889,57 @@ export const StickersView = () => {
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
+                className="space-y-4"
               >
+                {/* Search */}
+                <div className="relative">
+                  <Search size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search your stickers..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 bg-dark-card text-white rounded-lg border border-gray-700 focus:border-primary focus:outline-none"
+                  />
+                </div>
+
+                {/* Stickers Grid */}
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                  {stickers.filter(sticker => sticker.createdBy === currentUser?.id).map((sticker) => (
-                    <div key={sticker.id} className="bg-dark-card rounded-xl p-4 border border-gray-800 text-center">
-                      <div className="w-16 h-16 mx-auto mb-2 bg-gray-700 rounded-lg flex items-center justify-center">
-                        <span className="text-2xl">🎨</span>
+                  {filteredMyStickers.map((sticker) => (
+                    <div
+                      key={sticker.id}
+                      className="bg-dark-card rounded-xl p-4 border border-gray-800 hover:border-primary transition-colors"
+                    >
+                      <div className="aspect-square bg-white rounded-lg mb-3 flex items-center justify-center text-4xl">
+                        🎨
                       </div>
-                      <h4 className="text-white font-semibold text-sm mb-1">{sticker.name}</h4>
-                      <p className="text-gray-400 text-xs">Used {sticker.usageCount} times</p>
+                      <h3 className="text-white font-semibold text-sm mb-1 truncate">{sticker.name}</h3>
+                      <div className="flex items-center justify-between text-xs text-gray-400">
+                        <span>{sticker.usageCount} uses</span>
+                        <div className="flex space-x-1">
+                          <button className="p-1 hover:text-white transition-colors">
+                            <Download size={12} />
+                          </button>
+                          <button className="p-1 hover:text-white transition-colors">
+                            <Share2 size={12} />
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   ))}
-                  
-                  {stickers.filter(sticker => sticker.createdBy === currentUser?.id).length === 0 && (
-                    <div className="col-span-full text-center py-8 text-gray-400">
-                      <Package size={48} className="mx-auto mb-4 opacity-50" />
-                      <p>No stickers created yet. Start creating! 🎨</p>
-                    </div>
-                  )}
                 </div>
+
+                {filteredMyStickers.length === 0 && (
+                  <div className="text-center py-12 text-gray-400">
+                    <div className="text-6xl mb-4">🎨</div>
+                    <p className="text-lg font-hand">
+                      {searchTerm ? 'No stickers found' : 'No stickers created yet'}
+                    </p>
+                    <p className="text-sm mt-2">
+                      {searchTerm ? 'Try a different search term' : 'Start creating your first sticker!'}
+                    </p>
+                  </div>
+                )}
               </motion.div>
             )}
 
@@ -772,22 +950,26 @@ export const StickersView = () => {
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
+                className="space-y-4"
               >
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {ownedPacks.map((pack) => (
-                    <div key={pack.id} className="bg-dark-card rounded-xl p-4 border border-gray-800">
-                      <div className="flex items-center space-x-3 mb-3">
-                        <div className="w-12 h-12 bg-gradient-to-br from-primary to-secondary rounded-lg flex items-center justify-center">
-                          <Package size={24} className="text-white" />
-                        </div>
-                        <div className="flex-1">
-                          <h3 className="text-white font-bold">{pack.name}</h3>
-                          <p className="text-gray-400 text-sm">{pack.count} stickers</p>
-                        </div>
+                  {myPacks.map((pack) => (
+                    <div
+                      key={pack.id}
+                      className="bg-dark-card rounded-xl p-4 border border-gray-800"
+                    >
+                      <div className="flex items-center space-x-2 mb-3">
+                        <h3 className="text-white font-bold flex-1">{pack.name}</h3>
+                        {pack.createdBy === currentUser?.id && (
+                          <Crown size={16} className="text-accent" />
+                        )}
                       </div>
-                      <p className="text-gray-300 text-sm mb-3">{pack.description}</p>
-                      <div className="flex items-center justify-between">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      
+                      <p className="text-gray-400 text-sm mb-3">{pack.description}</p>
+                      
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-400">{pack.count} stickers</span>
+                        <span className={`px-2 py-1 rounded-full text-xs ${
                           pack.category === 'custom' ? 'bg-primary/20 text-primary' :
                           pack.category === 'roast' ? 'bg-orange/20 text-orange' :
                           pack.category === 'wholesome' ? 'bg-secondary/20 text-secondary' :
@@ -795,13 +977,18 @@ export const StickersView = () => {
                         }`}>
                           {pack.category}
                         </span>
-                        <button className="text-secondary hover:text-white transition-colors">
-                          <Download size={16} />
-                        </button>
                       </div>
                     </div>
                   ))}
                 </div>
+
+                {myPacks.length === 0 && (
+                  <div className="text-center py-12 text-gray-400">
+                    <div className="text-6xl mb-4">📦</div>
+                    <p className="text-lg font-hand">No sticker packs yet</p>
+                    <p className="text-sm mt-2">Create stickers and organize them into packs!</p>
+                  </div>
+                )}
               </motion.div>
             )}
 
@@ -812,116 +999,83 @@ export const StickersView = () => {
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
+                className="space-y-4"
               >
+                {/* Search */}
+                <div className="relative">
+                  <Search size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search sticker packs..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 bg-dark-card text-white rounded-lg border border-gray-700 focus:border-primary focus:outline-none"
+                  />
+                </div>
+
+                {/* Marketplace Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {explorePacks.map((pack) => (
-                    <div key={pack.id} className="bg-dark-card rounded-xl p-4 border border-gray-800">
-                      <div className="flex items-center space-x-3 mb-3">
-                        <div className="w-12 h-12 bg-gradient-to-br from-accent to-orange rounded-lg flex items-center justify-center">
-                          <ShoppingBag size={24} className="text-white" />
-                        </div>
-                        <div className="flex-1">
-                          <h3 className="text-white font-bold">{pack.name}</h3>
-                          <p className="text-gray-400 text-sm">{pack.count} stickers</p>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-accent font-bold">{pack.price} CP</div>
+                  {filteredMarketplacePacks.map((pack) => (
+                    <div
+                      key={pack.id}
+                      className="bg-dark-card rounded-xl p-4 border border-gray-800"
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-white font-bold">{pack.name}</h3>
+                        <div className="flex items-center space-x-1 text-accent">
+                          <Star size={14} fill="currentColor" />
+                          <span className="text-sm">{pack.rating}</span>
                         </div>
                       </div>
-                      <p className="text-gray-300 text-sm mb-4">{pack.description}</p>
-                      <button
-                        onClick={() => handlePurchasePack(pack.id)}
-                        disabled={!currentUser || currentUser.clownPoints < pack.price}
-                        className="w-full bg-gradient-to-r from-accent to-orange text-white rounded-lg py-2 font-semibold hover:from-accent/90 hover:to-orange/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        Add to My Stickers
-                      </button>
+                      
+                      <p className="text-gray-400 text-sm mb-3">{pack.description}</p>
+                      
+                      {/* Preview */}
+                      <div className="flex space-x-2 mb-3">
+                        {pack.preview.map((emoji, index) => (
+                          <div key={index} className="w-8 h-8 bg-white rounded flex items-center justify-center text-lg">
+                            {emoji}
+                          </div>
+                        ))}
+                      </div>
+                      
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-gray-400 text-sm">{pack.count} stickers</span>
+                        <span className="text-gray-400 text-sm">{pack.users.toLocaleString()} users</span>
+                      </div>
+                      
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-400 text-sm">by {pack.creator}</span>
+                        {pack.owned ? (
+                          <span className="px-3 py-1 bg-secondary/20 text-secondary rounded-full text-sm">
+                            Owned
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => purchasePack(pack.id, pack.price)}
+                            className="flex items-center space-x-1 px-3 py-1 bg-primary text-white rounded-full text-sm hover:bg-primary/90 transition-colors"
+                          >
+                            <ShoppingCart size={12} />
+                            <span>{pack.price} CP</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
-                  
-                  {explorePacks.length === 0 && (
-                    <div className="col-span-full text-center py-8 text-gray-400">
-                      <ShoppingBag size={48} className="mx-auto mb-4 opacity-50" />
-                      <p>No packs available for purchase right now! 🛍️</p>
-                    </div>
-                  )}
                 </div>
+
+                {filteredMarketplacePacks.length === 0 && (
+                  <div className="text-center py-12 text-gray-400">
+                    <div className="text-6xl mb-4">🛍️</div>
+                    <p className="text-lg font-hand">No packs found</p>
+                    <p className="text-sm mt-2">Try a different search term</p>
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
         </div>
       </div>
-
-      {/* Add Element Modal */}
-      <AnimatePresence>
-        {showCreateModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-            onClick={() => setShowCreateModal(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-dark-card rounded-2xl p-6 w-full max-w-md"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <h2 className="text-xl font-bold text-white mb-4">Add Element</h2>
-              
-              <div className="space-y-3">
-                <button
-                  onClick={addTextElement}
-                  className="w-full flex items-center space-x-3 p-4 bg-dark-light rounded-lg hover:bg-gray-700 transition-colors"
-                >
-                  <Type size={24} className="text-primary" />
-                  <div className="text-left">
-                    <div className="text-white font-semibold">Add Text</div>
-                    <div className="text-gray-400 text-sm">Add custom text to your sticker</div>
-                  </div>
-                </button>
-                
-                <button
-                  onClick={() => {
-                    // Show emoji picker
-                    setShowCreateModal(false);
-                    // For now, add a random emoji
-                    const randomEmoji = emojiOptions[Math.floor(Math.random() * emojiOptions.length)];
-                    addEmojiElement(randomEmoji);
-                  }}
-                  className="w-full flex items-center space-x-3 p-4 bg-dark-light rounded-lg hover:bg-gray-700 transition-colors"
-                >
-                  <Smile size={24} className="text-secondary" />
-                  <div className="text-left">
-                    <div className="text-white font-semibold">Add Emoji</div>
-                    <div className="text-gray-400 text-sm">Add fun emojis and symbols</div>
-                  </div>
-                </button>
-                
-                <button
-                  onClick={addImageElement}
-                  className="w-full flex items-center space-x-3 p-4 bg-dark-light rounded-lg hover:bg-gray-700 transition-colors"
-                >
-                  <Image size={24} className="text-accent" />
-                  <div className="text-left">
-                    <div className="text-white font-semibold">Add Image</div>
-                    <div className="text-gray-400 text-sm">Upload or use stock images</div>
-                  </div>
-                </button>
-              </div>
-              
-              <button
-                onClick={() => setShowCreateModal(false)}
-                className="w-full mt-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
-              >
-                Cancel
-              </button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* Save Sticker Modal */}
       <AnimatePresence>
@@ -944,7 +1098,9 @@ export const StickersView = () => {
               
               <div className="space-y-4">
                 <div>
-                  <label className="block text-gray-300 text-sm mb-2">Sticker Name</label>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Sticker Name
+                  </label>
                   <input
                     type="text"
                     value={stickerName}
@@ -954,9 +1110,12 @@ export const StickersView = () => {
                     autoFocus
                   />
                 </div>
-                
+
                 <div>
-                  <label className="block text-gray-300 text-sm mb-2">Save to Pack</label>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Save to Pack
+                  </label>
+                  
                   <div className="space-y-2">
                     <div className="flex items-center space-x-2">
                       <input
@@ -967,7 +1126,9 @@ export const StickersView = () => {
                         onChange={() => setCreateNewPack(false)}
                         className="text-primary"
                       />
-                      <label htmlFor="existing-pack" className="text-white">Existing Pack</label>
+                      <label htmlFor="existing-pack" className="text-white">
+                        Existing Pack
+                      </label>
                     </div>
                     
                     {!createNewPack && (
@@ -976,7 +1137,7 @@ export const StickersView = () => {
                         onChange={(e) => setSelectedPack(e.target.value)}
                         className="w-full bg-dark-light text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-primary focus:outline-none"
                       >
-                        {ownedPacks.map((pack) => (
+                        {myPacks.map((pack) => (
                           <option key={pack.id} value={pack.id}>
                             {pack.name} ({pack.count} stickers)
                           </option>
@@ -993,7 +1154,9 @@ export const StickersView = () => {
                         onChange={() => setCreateNewPack(true)}
                         className="text-primary"
                       />
-                      <label htmlFor="new-pack" className="text-white">Create New Pack</label>
+                      <label htmlFor="new-pack" className="text-white">
+                        Create New Pack
+                      </label>
                     </div>
                     
                     {createNewPack && (
@@ -1008,18 +1171,18 @@ export const StickersView = () => {
                   </div>
                 </div>
               </div>
-              
+
               <div className="flex space-x-3 mt-6">
                 <button
                   onClick={() => setShowSaveModal(false)}
-                  className="flex-1 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                  className="flex-1 py-2 bg-gray-700 text-white rounded-lg font-semibold hover:bg-gray-600 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleSaveSticker}
                   disabled={!stickerName.trim() || (createNewPack && !newPackName.trim())}
-                  className="flex-1 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 py-2 bg-primary text-white rounded-lg font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Save Sticker
                 </button>
