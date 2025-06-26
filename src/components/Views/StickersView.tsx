@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '../../store/useStore';
 import { 
@@ -8,27 +8,30 @@ import {
   Image as ImageIcon, 
   Square, 
   Circle, 
+  Triangle, 
   Save, 
   Trash2, 
+  Undo, 
+  Redo, 
   Download, 
   Upload, 
   Palette, 
-  Grid3X3, 
-  Undo, 
-  Redo,
-  MousePointer,
   Move,
   RotateCw,
   FlipHorizontal,
   FlipVertical,
+  Layers,
+  Grid,
   Eye,
   EyeOff,
-  ChevronUp,
-  ChevronDown,
-  Layers,
-  ArrowUp,
-  ArrowDown,
-  MoreVertical
+  Package,
+  ShoppingCart,
+  Star,
+  Search,
+  Filter,
+  X,
+  Check,
+  Edit3
 } from 'lucide-react';
 import { Sticker, StickerElement } from '../../types';
 import toast from 'react-hot-toast';
@@ -39,623 +42,485 @@ export const StickersView = () => {
     stickerPacks, 
     addSticker, 
     addStickerToPack, 
-    updateStickerPack,
     addStickerPack,
-    updateUserPoints 
+    updateStickerPack,
+    purchaseStickerPack, 
+    updateUserPoints, 
+    currentUser 
   } = useStore();
+
+  // Main state
+  const [activeTab, setActiveTab] = useState<'create' | 'browse' | 'packs'>('create');
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [showCreatePackModal, setShowCreatePackModal] = useState(false);
   
   // Canvas state
   const [elements, setElements] = useState<StickerElement[]>([]);
-  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
-  const [tool, setTool] = useState<'select' | 'text' | 'emoji' | 'image' | 'shape'>('select');
+  const [selectedElement, setSelectedElement] = useState<string | null>(null);
+  const [history, setHistory] = useState<StickerElement[][]>([[]]);
+  const [historyIndex, setHistoryIndex] = useState(0);
   const [showGrid, setShowGrid] = useState(false);
   const [canvasSize] = useState({ width: 300, height: 300 });
   
-  // Layer management state
-  const [showLayerPanel, setShowLayerPanel] = useState(true);
-  const [layerMenuOpen, setLayerMenuOpen] = useState<string | null>(null);
+  // Tool state
+  const [activeTool, setActiveTool] = useState<'select' | 'text' | 'emoji' | 'image' | 'shape'>('select');
+  const [textInput, setTextInput] = useState('');
+  const [selectedEmoji, setSelectedEmoji] = useState('😀');
+  const [selectedShape, setSelectedShape] = useState<'circle' | 'square' | 'triangle'>('circle');
+  const [selectedColor, setSelectedColor] = useState('#FF6B9D');
   
-  // Interaction state
+  // Drag and resize state
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [resizeHandle, setResizeHandle] = useState<string | null>(null);
   const [initialElementState, setInitialElementState] = useState<StickerElement | null>(null);
   
-  // History state
-  const [history, setHistory] = useState<StickerElement[][]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
-  
-  // Save modal state
-  const [showSaveModal, setShowSaveModal] = useState(false);
+  // Save state
   const [stickerName, setStickerName] = useState('');
-  const [selectedPackId, setSelectedPackId] = useState('pack-default');
+  const [stickerTags, setStickerTags] = useState<string[]>([]);
+  const [selectedPackId, setSelectedPackId] = useState('');
   const [newPackName, setNewPackName] = useState('');
-  const [createNewPack, setCreateNewPack] = useState(false);
+  const [newPackDescription, setNewPackDescription] = useState('');
   
-  // Refs
+  // Browse state
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterCategory, setFilterCategory] = useState<string>('all');
+  
   const canvasRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  // Get canvas bounds for coordinate calculations
+
+  // Emoji categories
+  const emojiCategories = {
+    'Faces': ['😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃', '😉', '😊', '😇', '🥰', '😍', '🤩', '😘', '😗', '😚', '😙'],
+    'Animals': ['🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁', '🐮', '🐷', '🐸', '🐵', '🙈', '🙉', '🙊'],
+    'Food': ['🍎', '🍊', '🍋', '🍌', '🍉', '🍇', '🍓', '🍈', '🍒', '🍑', '🥭', '🍍', '🥥', '🥝', '🍅', '🍆', '🥑', '🥦'],
+    'Objects': ['⚽', '🏀', '🏈', '⚾', '🥎', '🎾', '🏐', '🏉', '🎱', '🪀', '🏓', '🏸', '🏒', '🏑', '🥍', '🏏', '🪃', '🥅'],
+  };
+
+  // Available fonts
+  const fonts = [
+    { name: 'Arial', value: 'Arial, sans-serif' },
+    { name: 'Helvetica', value: 'Helvetica, sans-serif' },
+    { name: 'Times', value: 'Times New Roman, serif' },
+    { name: 'Courier', value: 'Courier New, monospace' },
+    { name: 'Comic Sans', value: 'Comic Sans MS, cursive' },
+    { name: 'Impact', value: 'Impact, sans-serif' },
+  ];
+
+  // Get canvas bounds for constraint calculations
   const getCanvasBounds = useCallback(() => {
-    if (!canvasRef.current) return { left: 0, top: 0 };
+    if (!canvasRef.current) return { left: 0, top: 0, width: canvasSize.width, height: canvasSize.height };
     const rect = canvasRef.current.getBoundingClientRect();
-    return { left: rect.left, top: rect.top };
-  }, []);
-  
-  // Convert screen coordinates to canvas coordinates
-  const screenToCanvas = useCallback((screenX: number, screenY: number) => {
-    const bounds = getCanvasBounds();
     return {
-      x: screenX - bounds.left,
-      y: screenY - bounds.top
+      left: rect.left,
+      top: rect.top,
+      width: canvasSize.width,
+      height: canvasSize.height
     };
-  }, [getCanvasBounds]);
-  
-  // Add to history
-  const addToHistory = useCallback((newElements: StickerElement[]) => {
-    setHistory(prev => {
-      const newHistory = prev.slice(0, historyIndex + 1);
-      newHistory.push([...newElements]);
-      return newHistory.slice(-20); // Keep last 20 states
-    });
-    setHistoryIndex(prev => Math.min(prev + 1, 19));
-  }, [historyIndex]);
-  
-  // Undo/Redo functions
-  const undo = useCallback(() => {
-    if (historyIndex > 0) {
-      setHistoryIndex(prev => prev - 1);
-      setElements([...history[historyIndex - 1]]);
-      setSelectedElementId(null);
-    }
-  }, [history, historyIndex]);
-  
-  const redo = useCallback(() => {
-    if (historyIndex < history.length - 1) {
-      setHistoryIndex(prev => prev + 1);
-      setElements([...history[historyIndex + 1]]);
-      setSelectedElementId(null);
-    }
-  }, [history, historyIndex]);
-  
-  // Layer management functions
-  const moveElementToFront = useCallback((elementId: string) => {
-    setElements(prev => {
-      const newElements = [...prev];
-      const maxLayer = Math.max(...newElements.map(el => el.layer), 0);
-      const elementIndex = newElements.findIndex(el => el.id === elementId);
-      
-      if (elementIndex !== -1) {
-        newElements[elementIndex] = {
-          ...newElements[elementIndex],
-          layer: maxLayer + 1
-        };
-        addToHistory(newElements);
-        return newElements;
-      }
-      return prev;
-    });
-    toast.success('Moved to front! 🔝');
-  }, [addToHistory]);
-  
-  const moveElementToBack = useCallback((elementId: string) => {
-    setElements(prev => {
-      const newElements = [...prev];
-      const minLayer = Math.min(...newElements.map(el => el.layer), 0);
-      const elementIndex = newElements.findIndex(el => el.id === elementId);
-      
-      if (elementIndex !== -1) {
-        newElements[elementIndex] = {
-          ...newElements[elementIndex],
-          layer: minLayer - 1
-        };
-        addToHistory(newElements);
-        return newElements;
-      }
-      return prev;
-    });
-    toast.success('Moved to back! 🔙');
-  }, [addToHistory]);
-  
-  const moveElementUp = useCallback((elementId: string) => {
-    setElements(prev => {
-      const newElements = [...prev];
-      const elementIndex = newElements.findIndex(el => el.id === elementId);
-      
-      if (elementIndex !== -1) {
-        const currentLayer = newElements[elementIndex].layer;
-        const elementsAbove = newElements.filter(el => el.layer > currentLayer);
-        
-        if (elementsAbove.length > 0) {
-          const nextLayer = Math.min(...elementsAbove.map(el => el.layer));
-          newElements[elementIndex] = {
-            ...newElements[elementIndex],
-            layer: nextLayer + 0.1
-          };
-          addToHistory(newElements);
-          return newElements;
-        }
-      }
-      return prev;
-    });
-    toast.success('Moved up! ⬆️');
-  }, [addToHistory]);
-  
-  const moveElementDown = useCallback((elementId: string) => {
-    setElements(prev => {
-      const newElements = [...prev];
-      const elementIndex = newElements.findIndex(el => el.id === elementId);
-      
-      if (elementIndex !== -1) {
-        const currentLayer = newElements[elementIndex].layer;
-        const elementsBelow = newElements.filter(el => el.layer < currentLayer);
-        
-        if (elementsBelow.length > 0) {
-          const nextLayer = Math.max(...elementsBelow.map(el => el.layer));
-          newElements[elementIndex] = {
-            ...newElements[elementIndex],
-            layer: nextLayer - 0.1
-          };
-          addToHistory(newElements);
-          return newElements;
-        }
-      }
-      return prev;
-    });
-    toast.success('Moved down! ⬇️');
-  }, [addToHistory]);
-  
-  const toggleElementVisibility = useCallback((elementId: string) => {
-    setElements(prev => {
-      const newElements = prev.map(el => 
-        el.id === elementId 
-          ? { ...el, visible: !el.visible }
-          : el
-      );
-      addToHistory(newElements);
-      return newElements;
-    });
-  }, [addToHistory]);
-  
-  const duplicateElement = useCallback((elementId: string) => {
-    setElements(prev => {
-      const elementToDuplicate = prev.find(el => el.id === elementId);
-      if (!elementToDuplicate) return prev;
-      
-      const newElement: StickerElement = {
-        ...elementToDuplicate,
-        id: `element-${Date.now()}`,
-        x: elementToDuplicate.x + 20,
-        y: elementToDuplicate.y + 20,
-        layer: Math.max(...prev.map(el => el.layer), 0) + 1
-      };
-      
-      const newElements = [...prev, newElement];
-      addToHistory(newElements);
-      setSelectedElementId(newElement.id);
-      return newElements;
-    });
-    toast.success('Element duplicated! 📋');
-  }, [addToHistory]);
-  
-  // Get sorted elements by layer (bottom to top for rendering)
-  const getSortedElements = useCallback(() => {
-    return [...elements].sort((a, b) => a.layer - b.layer);
-  }, [elements]);
-  
-  // Get sorted elements for layer panel (top to bottom for UI)
-  const getLayerPanelElements = useCallback(() => {
-    return [...elements].sort((a, b) => b.layer - a.layer);
-  }, [elements]);
-  
-  // Add element function
+  }, [canvasSize]);
+
+  // Add element to canvas
   const addElement = useCallback((type: StickerElement['type'], content: string, additionalProps: Partial<StickerElement> = {}) => {
     const newElement: StickerElement = {
       id: `element-${Date.now()}`,
       type,
       content,
-      x: canvasSize.width / 2 - 50,
-      y: canvasSize.height / 2 - 25,
-      width: type === 'text' ? 100 : type === 'emoji' ? 50 : 80,
-      height: type === 'text' ? 30 : type === 'emoji' ? 50 : 80,
+      x: Math.random() * (canvasSize.width - 100),
+      y: Math.random() * (canvasSize.height - 100),
+      width: type === 'text' ? 120 : type === 'emoji' ? 60 : 100,
+      height: type === 'text' ? 40 : type === 'emoji' ? 60 : 100,
       rotation: 0,
       flipX: false,
       flipY: false,
-      layer: Math.max(...elements.map(el => el.layer), 0) + 1,
-      visible: true,
-      style: type === 'text' ? {
-        fontSize: 16,
-        color: '#ffffff',
-        fontFamily: 'Arial',
-        fontWeight: 'normal'
-      } : undefined,
+      layer: elements.length,
+      style: {
+        fontSize: type === 'text' ? 16 : type === 'emoji' ? 32 : undefined,
+        color: type === 'text' ? selectedColor : undefined,
+        fontFamily: type === 'text' ? 'Arial, sans-serif' : undefined,
+        fontWeight: type === 'text' ? 'normal' : undefined,
+      },
       ...additionalProps
     };
-    
+
     const newElements = [...elements, newElement];
     setElements(newElements);
-    addToHistory(newElements);
-    setSelectedElementId(newElement.id);
-    setTool('select');
-  }, [elements, canvasSize, addToHistory]);
-  
-  // Mouse event handlers
-  const handleMouseDown = useCallback((e: React.MouseEvent, elementId?: string) => {
+    setSelectedElement(newElement.id);
+    
+    // Add to history
+    const newHistory = history.slice(0, historyIndex + 1);
+    newHistory.push(newElements);
+    setHistory(newHistory);
+    setHistoryIndex(newHistory.length - 1);
+    
+    toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} added! 🎨`);
+  }, [elements, history, historyIndex, canvasSize, selectedColor]);
+
+  // Handle text addition
+  const handleAddText = () => {
+    if (!textInput.trim()) {
+      toast.error('Enter some text first! 📝');
+      return;
+    }
+    addElement('text', textInput.trim());
+    setTextInput('');
+  };
+
+  // Handle emoji addition
+  const handleAddEmoji = (emoji: string) => {
+    addElement('emoji', emoji);
+    setSelectedEmoji(emoji);
+  };
+
+  // Handle shape addition
+  const handleAddShape = () => {
+    addElement('shape', selectedShape, {
+      style: { color: selectedColor }
+    });
+  };
+
+  // Handle image upload
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file! 🖼️');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const imageData = e.target?.result as string;
+      addElement('image', file.name, {
+        imageData,
+        width: 120,
+        height: 120
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Mouse event handlers for drag and resize
+  const handleMouseDown = useCallback((e: React.MouseEvent, elementId: string, action: 'drag' | 'resize', handle?: string) => {
     e.preventDefault();
     e.stopPropagation();
     
-    if (elementId) {
-      setSelectedElementId(elementId);
-      
-      // Check if clicking on resize handle
-      const target = e.target as HTMLElement;
-      const handle = target.getAttribute('data-handle');
-      
-      if (handle) {
-        setIsResizing(true);
-        setResizeHandle(handle);
-        const element = elements.find(el => el.id === elementId);
-        if (element) {
-          setInitialElementState({ ...element });
-        }
-      } else {
-        setIsDragging(true);
-        const canvasPos = screenToCanvas(e.clientX, e.clientY);
-        const element = elements.find(el => el.id === elementId);
-        if (element) {
-          setDragStart({
-            x: canvasPos.x - element.x,
-            y: canvasPos.y - element.y
-          });
-        }
-      }
-    } else {
-      setSelectedElementId(null);
-    }
-  }, [elements, screenToCanvas]);
-  
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!selectedElementId) return;
+    const element = elements.find(el => el.id === elementId);
+    if (!element) return;
+
+    setSelectedElement(elementId);
+    setInitialElementState({ ...element });
     
-    const canvasPos = screenToCanvas(e.clientX, e.clientY);
+    const bounds = getCanvasBounds();
+    const startX = e.clientX - bounds.left;
+    const startY = e.clientY - bounds.top;
     
-    if (isDragging) {
-      setElements(prev => prev.map(el => 
-        el.id === selectedElementId
-          ? {
-              ...el,
-              x: Math.max(0, Math.min(canvasSize.width - el.width, canvasPos.x - dragStart.x)),
-              y: Math.max(0, Math.min(canvasSize.height - el.height, canvasPos.y - dragStart.y))
-            }
-          : el
-      ));
-    } else if (isResizing && resizeHandle && initialElementState) {
-      const deltaX = canvasPos.x - (initialElementState.x + initialElementState.width / 2);
-      const deltaY = canvasPos.y - (initialElementState.y + initialElementState.height / 2);
-      
-      let newWidth = initialElementState.width;
-      let newHeight = initialElementState.height;
-      let newX = initialElementState.x;
-      let newY = initialElementState.y;
-      
-      switch (resizeHandle) {
-        case 'nw':
-          newWidth = Math.max(20, initialElementState.width - deltaX * 2);
-          newHeight = Math.max(20, initialElementState.height - deltaY * 2);
-          newX = initialElementState.x + (initialElementState.width - newWidth) / 2;
-          newY = initialElementState.y + (initialElementState.height - newHeight) / 2;
-          break;
-        case 'ne':
-          newWidth = Math.max(20, initialElementState.width + deltaX * 2);
-          newHeight = Math.max(20, initialElementState.height - deltaY * 2);
-          newX = initialElementState.x + (initialElementState.width - newWidth) / 2;
-          newY = initialElementState.y + (initialElementState.height - newHeight) / 2;
-          break;
-        case 'sw':
-          newWidth = Math.max(20, initialElementState.width - deltaX * 2);
-          newHeight = Math.max(20, initialElementState.height + deltaY * 2);
-          newX = initialElementState.x + (initialElementState.width - newWidth) / 2;
-          newY = initialElementState.y + (initialElementState.height - newHeight) / 2;
-          break;
-        case 'se':
-          newWidth = Math.max(20, initialElementState.width + deltaX * 2);
-          newHeight = Math.max(20, initialElementState.height + deltaY * 2);
-          newX = initialElementState.x + (initialElementState.width - newWidth) / 2;
-          newY = initialElementState.y + (initialElementState.height - newHeight) / 2;
-          break;
-        case 'n':
-          newHeight = Math.max(20, initialElementState.height - deltaY * 2);
-          newY = initialElementState.y + (initialElementState.height - newHeight) / 2;
-          break;
-        case 's':
-          newHeight = Math.max(20, initialElementState.height + deltaY * 2);
-          newY = initialElementState.y + (initialElementState.height - newHeight) / 2;
-          break;
-        case 'w':
-          newWidth = Math.max(20, initialElementState.width - deltaX * 2);
-          newX = initialElementState.x + (initialElementState.width - newWidth) / 2;
-          break;
-        case 'e':
-          newWidth = Math.max(20, initialElementState.width + deltaX * 2);
-          newX = initialElementState.x + (initialElementState.width - newWidth) / 2;
-          break;
-      }
-      
-      // Ensure element stays within canvas bounds
-      newX = Math.max(0, Math.min(canvasSize.width - newWidth, newX));
-      newY = Math.max(0, Math.min(canvasSize.height - newHeight, newY));
-      
-      setElements(prev => prev.map(el => 
-        el.id === selectedElementId
-          ? { ...el, x: newX, y: newY, width: newWidth, height: newHeight }
-          : el
-      ));
+    setDragStart({ x: startX, y: startY });
+    
+    if (action === 'drag') {
+      setIsDragging(true);
+    } else if (action === 'resize') {
+      setIsResizing(true);
+      setResizeHandle(handle || null);
     }
-  }, [selectedElementId, isDragging, isResizing, resizeHandle, initialElementState, dragStart, canvasSize, screenToCanvas]);
-  
+  }, [elements, getCanvasBounds]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!selectedElement || (!isDragging && !isResizing) || !initialElementState) return;
+
+    const bounds = getCanvasBounds();
+    const currentX = e.clientX - bounds.left;
+    const currentY = e.clientY - bounds.top;
+    const deltaX = currentX - dragStart.x;
+    const deltaY = currentY - dragStart.y;
+
+    setElements(prevElements => 
+      prevElements.map(element => {
+        if (element.id !== selectedElement) return element;
+
+        if (isDragging) {
+          // Handle dragging
+          const newX = Math.max(0, Math.min(bounds.width - element.width, initialElementState.x + deltaX));
+          const newY = Math.max(0, Math.min(bounds.height - element.height, initialElementState.y + deltaY));
+          
+          return {
+            ...element,
+            x: newX,
+            y: newY
+          };
+        } else if (isResizing && resizeHandle) {
+          // Handle resizing
+          let newX = element.x;
+          let newY = element.y;
+          let newWidth = element.width;
+          let newHeight = element.height;
+
+          const minSize = 20;
+          
+          switch (resizeHandle) {
+            case 'nw': // Top-left
+              newWidth = Math.max(minSize, initialElementState.width - deltaX);
+              newHeight = Math.max(minSize, initialElementState.height - deltaY);
+              newX = initialElementState.x + (initialElementState.width - newWidth);
+              newY = initialElementState.y + (initialElementState.height - newHeight);
+              break;
+            case 'ne': // Top-right
+              newWidth = Math.max(minSize, initialElementState.width + deltaX);
+              newHeight = Math.max(minSize, initialElementState.height - deltaY);
+              newY = initialElementState.y + (initialElementState.height - newHeight);
+              break;
+            case 'sw': // Bottom-left
+              newWidth = Math.max(minSize, initialElementState.width - deltaX);
+              newHeight = Math.max(minSize, initialElementState.height + deltaY);
+              newX = initialElementState.x + (initialElementState.width - newWidth);
+              break;
+            case 'se': // Bottom-right
+              newWidth = Math.max(minSize, initialElementState.width + deltaX);
+              newHeight = Math.max(minSize, initialElementState.height + deltaY);
+              break;
+            case 'n': // Top
+              newHeight = Math.max(minSize, initialElementState.height - deltaY);
+              newY = initialElementState.y + (initialElementState.height - newHeight);
+              break;
+            case 's': // Bottom
+              newHeight = Math.max(minSize, initialElementState.height + deltaY);
+              break;
+            case 'w': // Left
+              newWidth = Math.max(minSize, initialElementState.width - deltaX);
+              newX = initialElementState.x + (initialElementState.width - newWidth);
+              break;
+            case 'e': // Right
+              newWidth = Math.max(minSize, initialElementState.width + deltaX);
+              break;
+          }
+
+          // Ensure element stays within canvas bounds
+          newX = Math.max(0, Math.min(bounds.width - newWidth, newX));
+          newY = Math.max(0, Math.min(bounds.height - newHeight, newY));
+          newWidth = Math.min(newWidth, bounds.width - newX);
+          newHeight = Math.min(newHeight, bounds.height - newY);
+
+          return {
+            ...element,
+            x: newX,
+            y: newY,
+            width: newWidth,
+            height: newHeight
+          };
+        }
+
+        return element;
+      })
+    );
+  }, [selectedElement, isDragging, isResizing, dragStart, initialElementState, resizeHandle, getCanvasBounds]);
+
   const handleMouseUp = useCallback(() => {
     if (isDragging || isResizing) {
-      addToHistory(elements);
+      // Add to history when drag/resize ends
+      const newHistory = history.slice(0, historyIndex + 1);
+      newHistory.push([...elements]);
+      setHistory(newHistory);
+      setHistoryIndex(newHistory.length - 1);
     }
+    
     setIsDragging(false);
     setIsResizing(false);
     setResizeHandle(null);
     setInitialElementState(null);
-  }, [isDragging, isResizing, elements, addToHistory]);
-  
-  // Global mouse event listeners
+  }, [isDragging, isResizing, elements, history, historyIndex]);
+
+  // Add global mouse event listeners
   useEffect(() => {
-    if (isDragging || isResizing) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-      
-      return () => {
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', handleMouseUp);
-      };
-    }
-  }, [isDragging, isResizing, handleMouseMove, handleMouseUp]);
-  
-  // Initialize history
-  useEffect(() => {
-    if (history.length === 0) {
-      setHistory([[]]);
-      setHistoryIndex(0);
-    }
-  }, [history.length]);
-  
-  // Tool handlers
-  const handleAddText = () => addElement('text', 'New Text');
-  const handleAddEmoji = () => addElement('emoji', '😀');
-  const handleAddShape = (shape: 'circle' | 'square') => {
-    addElement('image', shape, {
-      style: { 
-        backgroundColor: '#FF6B9D',
-        borderRadius: shape === 'circle' ? '50%' : '8px'
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+      if (isDragging || isResizing) {
+        handleMouseMove(e as any);
       }
-    });
-  };
-  
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const imageData = event.target?.result as string;
-        addElement('image', 'uploaded-image', { imageData });
-      };
-      reader.readAsDataURL(file);
+    };
+
+    const handleGlobalMouseUp = () => {
+      handleMouseUp();
+    };
+
+    if (isDragging || isResizing) {
+      document.addEventListener('mousemove', handleGlobalMouseMove);
+      document.addEventListener('mouseup', handleGlobalMouseUp);
     }
-  };
-  
+
+    return () => {
+      document.removeEventListener('mousemove', handleGlobalMouseMove);
+      document.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [isDragging, isResizing, handleMouseMove, handleMouseUp]);
+
   // Update element properties
-  const updateElementProperty = useCallback((elementId: string, property: string, value: any) => {
-    setElements(prev => {
-      const newElements = prev.map(el => {
-        if (el.id === elementId) {
-          if (property.startsWith('style.')) {
-            const styleProp = property.replace('style.', '');
-            return {
-              ...el,
-              style: { ...el.style, [styleProp]: value }
-            };
-          } else {
-            return { ...el, [property]: value };
-          }
-        }
-        return el;
-      });
-      return newElements;
-    });
+  const updateElement = useCallback((elementId: string, updates: Partial<StickerElement>) => {
+    setElements(prevElements => 
+      prevElements.map(element => 
+        element.id === elementId 
+          ? { ...element, ...updates, style: { ...element.style, ...updates.style } }
+          : element
+      )
+    );
   }, []);
-  
+
   // Delete element
   const deleteElement = useCallback((elementId: string) => {
-    setElements(prev => {
-      const newElements = prev.filter(el => el.id !== elementId);
-      addToHistory(newElements);
-      return newElements;
-    });
-    setSelectedElementId(null);
+    const newElements = elements.filter(el => el.id !== elementId);
+    setElements(newElements);
+    setSelectedElement(null);
+    
+    // Add to history
+    const newHistory = history.slice(0, historyIndex + 1);
+    newHistory.push(newElements);
+    setHistory(newHistory);
+    setHistoryIndex(newHistory.length - 1);
+    
     toast.success('Element deleted! 🗑️');
-  }, [addToHistory]);
-  
+  }, [elements, history, historyIndex]);
+
+  // Undo/Redo
+  const undo = useCallback(() => {
+    if (historyIndex > 0) {
+      setHistoryIndex(historyIndex - 1);
+      setElements(history[historyIndex - 1]);
+      setSelectedElement(null);
+    }
+  }, [history, historyIndex]);
+
+  const redo = useCallback(() => {
+    if (historyIndex < history.length - 1) {
+      setHistoryIndex(historyIndex + 1);
+      setElements(history[historyIndex + 1]);
+      setSelectedElement(null);
+    }
+  }, [history, historyIndex]);
+
+  // Clear canvas
+  const clearCanvas = () => {
+    setElements([]);
+    setSelectedElement(null);
+    const newHistory = history.slice(0, historyIndex + 1);
+    newHistory.push([]);
+    setHistory(newHistory);
+    setHistoryIndex(newHistory.length - 1);
+    toast.success('Canvas cleared! 🧹');
+  };
+
   // Save sticker
-  const handleSaveSticker = async () => {
-    if (!stickerName.trim()) {
-      toast.error('Please enter a sticker name! 📝');
-      return;
-    }
-    
+  const handleSaveSticker = () => {
     if (elements.length === 0) {
-      toast.error('Add some elements to your sticker first! 🎨');
+      toast.error('Add some elements first! 🎨');
       return;
     }
-    
+    setShowSaveModal(true);
+  };
+
+  const confirmSaveSticker = () => {
+    if (!stickerName.trim()) {
+      toast.error('Give your sticker a name! 📝');
+      return;
+    }
+
+    if (!selectedPackId && !newPackName.trim()) {
+      toast.error('Select a pack or create a new one! 📦');
+      return;
+    }
+
     try {
-      // Create canvas for preview
-      const canvas = document.createElement('canvas');
-      canvas.width = canvasSize.width;
-      canvas.height = canvasSize.height;
-      const ctx = canvas.getContext('2d');
-      
-      if (!ctx) {
-        throw new Error('Could not create canvas context');
-      }
-      
-      // Clear canvas
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      
-      // Render elements in layer order
-      const sortedElements = getSortedElements().filter(el => el.visible);
-      
-      for (const element of sortedElements) {
-        ctx.save();
-        
-        // Apply transformations
-        const centerX = element.x + element.width / 2;
-        const centerY = element.y + element.height / 2;
-        
-        ctx.translate(centerX, centerY);
-        ctx.rotate((element.rotation * Math.PI) / 180);
-        ctx.scale(element.flipX ? -1 : 1, element.flipY ? -1 : 1);
-        
-        if (element.type === 'text') {
-          ctx.fillStyle = element.style?.color || '#ffffff';
-          ctx.font = `${element.style?.fontWeight || 'normal'} ${element.style?.fontSize || 16}px ${element.style?.fontFamily || 'Arial'}`;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(element.content, 0, 0);
-        } else if (element.type === 'emoji') {
-          ctx.font = `${element.height}px Arial`;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(element.content, 0, 0);
-        } else if (element.type === 'image') {
-          if (element.content === 'circle' || element.content === 'square') {
-            ctx.fillStyle = element.style?.backgroundColor || '#FF6B9D';
-            if (element.content === 'circle') {
-              ctx.beginPath();
-              ctx.arc(0, 0, Math.min(element.width, element.height) / 2, 0, 2 * Math.PI);
-              ctx.fill();
-            } else {
-              ctx.fillRect(-element.width / 2, -element.height / 2, element.width, element.height);
-            }
-          } else if (element.imageData) {
-            const img = new Image();
-            img.onload = () => {
-              ctx.drawImage(img, -element.width / 2, -element.height / 2, element.width, element.height);
-            };
-            img.src = element.imageData;
-          }
-        }
-        
-        ctx.restore();
-      }
-      
-      // Convert to blob
-      const imageUrl = canvas.toDataURL('image/png');
-      
-      // Create sticker object
+      // Create the sticker
       const newSticker: Sticker = {
         id: `sticker-${Date.now()}`,
         name: stickerName.trim(),
-        imageUrl,
-        tags: ['custom'],
-        createdBy: 'user-1',
+        imageUrl: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iIzRFQ0RDNCIvPjx0ZXh0IHg9IjUwIiB5PSI1NSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjE0IiBmaWxsPSJ3aGl0ZSIgdGV4dC1hbmNob3I9Im1pZGRsZSI+U3RpY2tlcjwvdGV4dD48L3N2Zz4=',
+        tags: stickerTags,
+        createdBy: currentUser?.id || 'user-1',
         usageCount: 0,
-        elementData: elements
+        elementData: elements, // Save all element data
       };
-      
-      // Handle pack selection
+
       let targetPackId = selectedPackId;
-      
-      if (createNewPack && newPackName.trim()) {
+
+      // Create new pack if needed
+      if (!selectedPackId && newPackName.trim()) {
         const newPack = {
           id: `pack-${Date.now()}`,
           name: newPackName.trim(),
-          description: 'Custom sticker pack',
+          description: newPackDescription.trim() || 'Custom sticker pack',
           stickers: [],
           category: 'custom' as const,
           count: 0,
           owned: true,
           price: 0,
-          createdBy: 'user-1',
-          createdAt: new Date()
+          createdBy: currentUser?.id || 'user-1',
+          createdAt: new Date(),
         };
         
         addStickerPack(newPack);
         targetPackId = newPack.id;
-        toast.success(`New pack "${newPackName}" created! 📦`);
+        toast.success(`New pack "${newPack.name}" created! 📦`);
       }
-      
+
       // Add sticker to pack
-      addStickerToPack(newSticker, targetPackId);
-      updateUserPoints(10);
-      
-      // Reset form
-      setStickerName('');
-      setNewPackName('');
-      setCreateNewPack(false);
-      setElements([]);
-      setSelectedElementId(null);
-      setHistory([[]]);
-      setHistoryIndex(0);
-      setShowSaveModal(false);
-      
-      toast.success(`Sticker "${stickerName}" saved! 🎨 (+10 CP)`);
-      
+      if (targetPackId) {
+        addStickerToPack(newSticker, targetPackId);
+        updateUserPoints(10);
+        
+        // Reset form
+        setStickerName('');
+        setStickerTags([]);
+        setSelectedPackId('');
+        setNewPackName('');
+        setNewPackDescription('');
+        setShowSaveModal(false);
+        
+        toast.success(`Sticker "${newSticker.name}" saved! 🎨 (+10 CP)`);
+      } else {
+        throw new Error('No pack selected or created');
+      }
     } catch (error) {
       console.error('Error saving sticker:', error);
-      toast.error('Failed to save sticker. Please try again! 😞');
+      toast.error('Failed to save sticker! Please try again. 😞');
     }
   };
-  
-  // Get selected element
-  const selectedElement = selectedElementId ? elements.find(el => el.id === selectedElementId) : null;
-  
+
   // Render resize handles
   const renderResizeHandles = (element: StickerElement) => {
-    if (!selectedElementId || selectedElementId !== element.id) return null;
-    
+    if (selectedElement !== element.id) return null;
+
     const handles = [
-      { id: 'nw', x: -4, y: -4, cursor: 'nw-resize' },
-      { id: 'n', x: element.width / 2 - 4, y: -4, cursor: 'n-resize' },
-      { id: 'ne', x: element.width - 4, y: -4, cursor: 'ne-resize' },
-      { id: 'w', x: -4, y: element.height / 2 - 4, cursor: 'w-resize' },
-      { id: 'e', x: element.width - 4, y: element.height / 2 - 4, cursor: 'e-resize' },
-      { id: 'sw', x: -4, y: element.height - 4, cursor: 'sw-resize' },
-      { id: 's', x: element.width / 2 - 4, y: element.height - 4, cursor: 's-resize' },
-      { id: 'se', x: element.width - 4, y: element.height - 4, cursor: 'se-resize' },
+      { id: 'nw', style: { top: -4, left: -4, cursor: 'nw-resize' } },
+      { id: 'ne', style: { top: -4, right: -4, cursor: 'ne-resize' } },
+      { id: 'sw', style: { bottom: -4, left: -4, cursor: 'sw-resize' } },
+      { id: 'se', style: { bottom: -4, right: -4, cursor: 'se-resize' } },
+      { id: 'n', style: { top: -4, left: '50%', transform: 'translateX(-50%)', cursor: 'n-resize' } },
+      { id: 's', style: { bottom: -4, left: '50%', transform: 'translateX(-50%)', cursor: 's-resize' } },
+      { id: 'w', style: { top: '50%', left: -4, transform: 'translateY(-50%)', cursor: 'w-resize' } },
+      { id: 'e', style: { top: '50%', right: -4, transform: 'translateY(-50%)', cursor: 'e-resize' } },
     ];
-    
-    return handles.map(handle => (
-      <div
-        key={handle.id}
-        data-handle={handle.id}
-        className="absolute w-2 h-2 bg-primary border border-white rounded-sm z-10"
-        style={{
-          left: handle.x,
-          top: handle.y,
-          cursor: handle.cursor
-        }}
-        onMouseDown={(e) => handleMouseDown(e, element.id)}
-      />
-    ));
+
+    return (
+      <>
+        {handles.map(handle => (
+          <div
+            key={handle.id}
+            className="absolute w-2 h-2 bg-primary border border-white rounded-sm z-10"
+            style={handle.style}
+            onMouseDown={(e) => handleMouseDown(e, element.id, 'resize', handle.id)}
+          />
+        ))}
+      </>
+    );
   };
-  
-  // Render element
+
+  // Render element on canvas
   const renderElement = (element: StickerElement) => {
-    if (!element.visible) return null;
-    
-    const isSelected = selectedElementId === element.id;
+    const isSelected = selectedElement === element.id;
     
     return (
       <div
         key={element.id}
-        className={`absolute select-none ${isSelected ? 'ring-2 ring-primary' : ''}`}
+        className={`absolute cursor-move select-none ${isSelected ? 'ring-2 ring-primary ring-opacity-50' : ''}`}
         style={{
           left: element.x,
           top: element.y,
@@ -663,62 +528,68 @@ export const StickersView = () => {
           height: element.height,
           transform: `rotate(${element.rotation}deg) scaleX(${element.flipX ? -1 : 1}) scaleY(${element.flipY ? -1 : 1})`,
           zIndex: element.layer,
-          cursor: tool === 'select' ? 'move' : 'default'
         }}
-        onMouseDown={(e) => handleMouseDown(e, element.id)}
+        onMouseDown={(e) => handleMouseDown(e, element.id, 'drag')}
+        onClick={(e) => {
+          e.stopPropagation();
+          setSelectedElement(element.id);
+        }}
       >
-        {element.type === 'text' && (
-          <div
-            className="w-full h-full flex items-center justify-center text-center break-words"
-            style={{
-              fontSize: element.style?.fontSize || 16,
-              color: element.style?.color || '#ffffff',
-              fontFamily: element.style?.fontFamily || 'Arial',
-              fontWeight: element.style?.fontWeight || 'normal'
-            }}
-          >
-            {element.content}
-          </div>
-        )}
+        {/* Element content */}
+        <div className="w-full h-full flex items-center justify-center overflow-hidden">
+          {element.type === 'text' && (
+            <div
+              className="w-full h-full flex items-center justify-center text-center break-words"
+              style={{
+                fontSize: element.style?.fontSize || 16,
+                color: element.style?.color || '#000000',
+                fontFamily: element.style?.fontFamily || 'Arial, sans-serif',
+                fontWeight: element.style?.fontWeight || 'normal',
+              }}
+            >
+              {element.content}
+            </div>
+          )}
+          
+          {element.type === 'emoji' && (
+            <div
+              className="w-full h-full flex items-center justify-center"
+              style={{
+                fontSize: element.style?.fontSize || 32,
+              }}
+            >
+              {element.content}
+            </div>
+          )}
+          
+          {element.type === 'shape' && (
+            <div
+              className="w-full h-full"
+              style={{
+                backgroundColor: element.style?.color || '#FF6B9D',
+                borderRadius: element.content === 'circle' ? '50%' : element.content === 'triangle' ? '0' : '0',
+                clipPath: element.content === 'triangle' ? 'polygon(50% 0%, 0% 100%, 100% 100%)' : 'none',
+              }}
+            />
+          )}
+          
+          {element.type === 'image' && element.imageData && (
+            <img
+              src={element.imageData}
+              alt={element.content}
+              className="w-full h-full object-cover rounded"
+              draggable={false}
+            />
+          )}
+        </div>
         
-        {element.type === 'emoji' && (
-          <div
-            className="w-full h-full flex items-center justify-center"
-            style={{ fontSize: element.height * 0.8 }}
-          >
-            {element.content}
-          </div>
-        )}
-        
-        {element.type === 'image' && (
-          <div className="w-full h-full">
-            {element.content === 'circle' && (
-              <div
-                className="w-full h-full rounded-full"
-                style={{ backgroundColor: element.style?.backgroundColor || '#FF6B9D' }}
-              />
-            )}
-            {element.content === 'square' && (
-              <div
-                className="w-full h-full rounded-lg"
-                style={{ backgroundColor: element.style?.backgroundColor || '#FF6B9D' }}
-              />
-            )}
-            {element.imageData && (
-              <img
-                src={element.imageData}
-                alt="Uploaded"
-                className="w-full h-full object-cover rounded-lg"
-                draggable={false}
-              />
-            )}
-          </div>
-        )}
-        
+        {/* Resize handles */}
         {renderResizeHandles(element)}
       </div>
     );
   };
+
+  const selectedElementData = elements.find(el => el.id === selectedElement);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-dark via-secondary/10 to-dark relative overflow-hidden">
@@ -731,586 +602,575 @@ export const StickersView = () => {
       </div>
 
       <div className="relative z-10 p-4 pb-20">
-        <div className="max-w-6xl mx-auto">
-          {/* Header */}
-          <div className="text-center mb-6">
-            <h1 className="text-3xl font-bold text-white mb-2 font-sketch crayon-text">
-              🎨 Sticker Studio
-            </h1>
-            <p className="text-gray-400 font-hand">Create amazing custom stickers with layers!</p>
+        <div className="max-w-7xl mx-auto">
+          {/* Tab Navigation */}
+          <div className="flex bg-dark-card rounded-xl p-1 mb-6 max-w-md mx-auto">
+            {[
+              { id: 'create', label: 'Create', icon: Plus },
+              { id: 'browse', label: 'Browse', icon: Search },
+              { id: 'packs', label: 'Packs', icon: Package },
+            ].map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className={`flex-1 flex items-center justify-center space-x-2 py-3 rounded-lg transition-all ${
+                    activeTab === tab.id
+                      ? 'bg-secondary text-white'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  <Icon size={16} />
+                  <span className="font-medium">{tab.label}</span>
+                </button>
+              );
+            })}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            {/* Tools Panel */}
-            <div className="lg:col-span-1">
-              <div className="bg-dark-card rounded-xl p-4 border border-gray-800 mb-4">
-                <h3 className="text-white font-bold mb-3 font-sketch">🛠️ Tools</h3>
-                
-                <div className="grid grid-cols-2 gap-2 mb-4">
-                  {[
-                    { id: 'select', icon: MousePointer, label: 'Select' },
-                    { id: 'text', icon: Type, label: 'Text' },
-                    { id: 'emoji', icon: Smile, label: 'Emoji' },
-                    { id: 'image', icon: ImageIcon, label: 'Image' },
-                  ].map((toolItem) => {
-                    const Icon = toolItem.icon;
-                    return (
-                      <button
-                        key={toolItem.id}
-                        onClick={() => setTool(toolItem.id as any)}
-                        className={`p-3 rounded-lg transition-all doodle-btn ${
-                          tool === toolItem.id
-                            ? 'bg-primary text-white'
-                            : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                        }`}
-                      >
-                        <Icon size={16} className="mx-auto mb-1" />
-                        <div className="text-xs font-hand">{toolItem.label}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Quick Actions */}
-                <div className="space-y-2">
-                  <button
-                    onClick={handleAddText}
-                    className="w-full bg-gradient-to-r from-primary to-purple text-white rounded-lg py-2 text-sm font-semibold doodle-btn"
-                  >
-                    <Type size={16} className="inline mr-2" />
-                    Add Text
-                  </button>
-                  
-                  <button
-                    onClick={handleAddEmoji}
-                    className="w-full bg-gradient-to-r from-secondary to-blue-500 text-white rounded-lg py-2 text-sm font-semibold doodle-btn"
-                  >
-                    <Smile size={16} className="inline mr-2" />
-                    Add Emoji
-                  </button>
-                  
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => handleAddShape('circle')}
-                      className="bg-accent text-dark rounded-lg py-2 text-sm font-semibold doodle-btn"
-                    >
-                      <Circle size={16} className="inline mr-1" />
-                      Circle
-                    </button>
-                    <button
-                      onClick={() => handleAddShape('square')}
-                      className="bg-orange text-white rounded-lg py-2 text-sm font-semibold doodle-btn"
-                    >
-                      <Square size={16} className="inline mr-1" />
-                      Square
-                    </button>
+          <AnimatePresence mode="wait">
+            {/* Create Tab */}
+            {activeTab === 'create' && (
+              <motion.div
+                key="create"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="grid grid-cols-1 lg:grid-cols-4 gap-6"
+              >
+                {/* Tools Panel */}
+                <div className="lg:col-span-1 space-y-4">
+                  {/* Tool Selection */}
+                  <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
+                    <h3 className="text-white font-bold mb-3">Tools</h3>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { id: 'select', icon: Move, label: 'Select' },
+                        { id: 'text', icon: Type, label: 'Text' },
+                        { id: 'emoji', icon: Smile, label: 'Emoji' },
+                        { id: 'image', icon: ImageIcon, label: 'Image' },
+                      ].map((tool) => {
+                        const Icon = tool.icon;
+                        return (
+                          <button
+                            key={tool.id}
+                            onClick={() => setActiveTool(tool.id as any)}
+                            className={`p-3 rounded-lg border-2 transition-all ${
+                              activeTool === tool.id
+                                ? 'border-secondary bg-secondary/20 text-secondary'
+                                : 'border-gray-700 text-gray-400 hover:border-gray-600 hover:text-white'
+                            }`}
+                          >
+                            <Icon size={20} className="mx-auto mb-1" />
+                            <div className="text-xs">{tool.label}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                  
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="w-full bg-purple text-white rounded-lg py-2 text-sm font-semibold doodle-btn"
-                  >
-                    <Upload size={16} className="inline mr-2" />
-                    Upload Image
-                  </button>
-                  
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageUpload}
-                    className="hidden"
-                  />
-                </div>
 
-                {/* Canvas Controls */}
-                <div className="mt-4 pt-4 border-t border-gray-700">
-                  <h4 className="text-white font-semibold mb-2 text-sm">Canvas</h4>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={undo}
-                      disabled={historyIndex <= 0}
-                      className="p-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Undo size={16} />
-                    </button>
-                    <button
-                      onClick={redo}
-                      disabled={historyIndex >= history.length - 1}
-                      className="p-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Redo size={16} />
-                    </button>
-                    <button
-                      onClick={() => setShowGrid(!showGrid)}
-                      className={`p-2 rounded-lg transition-colors ${
-                        showGrid ? 'bg-primary text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                      }`}
-                    >
-                      <Grid3X3 size={16} />
-                    </button>
-                    <button
-                      onClick={() => {
-                        setElements([]);
-                        setSelectedElementId(null);
-                        addToHistory([]);
-                      }}
-                      className="p-2 bg-red-500 text-white rounded-lg hover:bg-red-400 transition-colors"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                </div>
-              </div>
+                  {/* Tool Options */}
+                  <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
+                    <h3 className="text-white font-bold mb-3">Options</h3>
+                    
+                    {activeTool === 'text' && (
+                      <div className="space-y-3">
+                        <input
+                          type="text"
+                          value={textInput}
+                          onChange={(e) => setTextInput(e.target.value)}
+                          placeholder="Enter text..."
+                          className="w-full bg-dark-light text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-secondary focus:outline-none"
+                          onKeyDown={(e) => e.key === 'Enter' && handleAddText()}
+                        />
+                        <button
+                          onClick={handleAddText}
+                          disabled={!textInput.trim()}
+                          className="w-full bg-secondary text-white rounded-lg py-2 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Add Text
+                        </button>
+                      </div>
+                    )}
 
-              {/* Layer Panel */}
-              <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-white font-bold font-sketch flex items-center">
-                    <Layers size={18} className="mr-2" />
-                    Layers
-                  </h3>
-                  <button
-                    onClick={() => setShowLayerPanel(!showLayerPanel)}
-                    className="text-gray-400 hover:text-white transition-colors"
-                  >
-                    {showLayerPanel ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-
-                {showLayerPanel && (
-                  <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {getLayerPanelElements().map((element, index) => (
-                      <div
-                        key={element.id}
-                        className={`p-2 rounded-lg border transition-all cursor-pointer ${
-                          selectedElementId === element.id
-                            ? 'border-primary bg-primary/20'
-                            : 'border-gray-700 bg-gray-800/50 hover:bg-gray-700/50'
-                        }`}
-                        onClick={() => setSelectedElementId(element.id)}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-2 flex-1 min-w-0">
-                            <div className="text-lg flex-shrink-0">
-                              {element.type === 'text' && '📝'}
-                              {element.type === 'emoji' && element.content}
-                              {element.type === 'image' && '🖼️'}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="text-white text-sm font-medium truncate">
-                                {element.type === 'text' ? element.content : 
-                                 element.type === 'emoji' ? 'Emoji' :
-                                 element.type === 'image' ? 'Image' : 'Element'}
-                              </div>
-                              <div className="text-xs text-gray-400">
-                                Layer {Math.round(element.layer)}
-                              </div>
+                    {activeTool === 'emoji' && (
+                      <div className="space-y-3">
+                        {Object.entries(emojiCategories).map(([category, emojis]) => (
+                          <div key={category}>
+                            <h4 className="text-xs text-gray-400 mb-2">{category}</h4>
+                            <div className="grid grid-cols-4 gap-1">
+                              {emojis.slice(0, 8).map((emoji) => (
+                                <button
+                                  key={emoji}
+                                  onClick={() => handleAddEmoji(emoji)}
+                                  className="p-2 text-lg hover:bg-gray-700 rounded transition-colors"
+                                >
+                                  {emoji}
+                                </button>
+                              ))}
                             </div>
                           </div>
-                          
-                          <div className="flex items-center space-x-1">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleElementVisibility(element.id);
-                              }}
-                              className="p-1 text-gray-400 hover:text-white transition-colors"
-                            >
-                              {element.visible ? <Eye size={12} /> : <EyeOff size={12} />}
-                            </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {activeTool === 'image' && (
+                      <div className="space-y-3">
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handleImageUpload}
+                          className="hidden"
+                        />
+                        <button
+                          onClick={() => fileInputRef.current?.click()}
+                          className="w-full bg-secondary text-white rounded-lg py-2 font-semibold flex items-center justify-center space-x-2"
+                        >
+                          <Upload size={16} />
+                          <span>Upload Image</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {activeTool === 'shape' && (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { id: 'circle', icon: Circle },
+                            { id: 'square', icon: Square },
+                            { id: 'triangle', icon: Triangle },
+                          ].map((shape) => {
+                            const Icon = shape.icon;
+                            return (
+                              <button
+                                key={shape.id}
+                                onClick={() => setSelectedShape(shape.id as any)}
+                                className={`p-2 rounded border-2 transition-all ${
+                                  selectedShape === shape.id
+                                    ? 'border-secondary text-secondary'
+                                    : 'border-gray-700 text-gray-400 hover:border-gray-600'
+                                }`}
+                              >
+                                <Icon size={20} className="mx-auto" />
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <input
+                          type="color"
+                          value={selectedColor}
+                          onChange={(e) => setSelectedColor(e.target.value)}
+                          className="w-full h-10 rounded border border-gray-700"
+                        />
+                        <button
+                          onClick={handleAddShape}
+                          className="w-full bg-secondary text-white rounded-lg py-2 font-semibold"
+                        >
+                          Add Shape
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Canvas Controls */}
+                  <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
+                    <h3 className="text-white font-bold mb-3">Canvas</h3>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={undo}
+                        disabled={historyIndex <= 0}
+                        className="p-2 bg-gray-700 text-white rounded hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Undo size={16} className="mx-auto" />
+                      </button>
+                      <button
+                        onClick={redo}
+                        disabled={historyIndex >= history.length - 1}
+                        className="p-2 bg-gray-700 text-white rounded hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Redo size={16} className="mx-auto" />
+                      </button>
+                      <button
+                        onClick={() => setShowGrid(!showGrid)}
+                        className={`p-2 rounded transition-colors ${
+                          showGrid ? 'bg-secondary text-white' : 'bg-gray-700 text-white hover:bg-gray-600'
+                        }`}
+                      >
+                        <Grid size={16} className="mx-auto" />
+                      </button>
+                      <button
+                        onClick={clearCanvas}
+                        className="p-2 bg-red-600 text-white rounded hover:bg-red-500"
+                      >
+                        <Trash2 size={16} className="mx-auto" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Canvas */}
+                <div className="lg:col-span-2">
+                  <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-white font-bold">Canvas</h3>
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={handleSaveSticker}
+                          disabled={elements.length === 0}
+                          className="px-4 py-2 bg-primary text-white rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                        >
+                          <Save size={16} />
+                          <span>Save Sticker</span>
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <div className="relative mx-auto bg-white rounded-lg overflow-hidden" style={{ width: canvasSize.width, height: canvasSize.height }}>
+                      {/* Grid overlay */}
+                      {showGrid && (
+                        <div 
+                          className="absolute inset-0 pointer-events-none opacity-20"
+                          style={{
+                            backgroundImage: 'linear-gradient(rgba(0,0,0,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.1) 1px, transparent 1px)',
+                            backgroundSize: '20px 20px'
+                          }}
+                        />
+                      )}
+                      
+                      {/* Canvas area */}
+                      <div
+                        ref={canvasRef}
+                        className="relative w-full h-full cursor-crosshair"
+                        onMouseMove={handleMouseMove}
+                        onMouseUp={handleMouseUp}
+                        onClick={() => setSelectedElement(null)}
+                      >
+                        {elements.map(renderElement)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Properties Panel */}
+                <div className="lg:col-span-1 space-y-4">
+                  {/* Element Properties */}
+                  {selectedElementData && (
+                    <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
+                      <h3 className="text-white font-bold mb-3">Properties</h3>
+                      
+                      <div className="space-y-3">
+                        {/* Position */}
+                        <div>
+                          <label className="block text-xs text-gray-400 mb-1">Position</label>
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              type="number"
+                              value={Math.round(selectedElementData.x)}
+                              onChange={(e) => updateElement(selectedElementData.id, { x: parseInt(e.target.value) || 0 })}
+                              className="bg-dark-light text-white rounded px-2 py-1 text-sm border border-gray-700 focus:border-secondary focus:outline-none"
+                              placeholder="X"
+                            />
+                            <input
+                              type="number"
+                              value={Math.round(selectedElementData.y)}
+                              onChange={(e) => updateElement(selectedElementData.id, { y: parseInt(e.target.value) || 0 })}
+                              className="bg-dark-light text-white rounded px-2 py-1 text-sm border border-gray-700 focus:border-secondary focus:outline-none"
+                              placeholder="Y"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Size */}
+                        <div>
+                          <label className="block text-xs text-gray-400 mb-1">Size</label>
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              type="number"
+                              value={Math.round(selectedElementData.width)}
+                              onChange={(e) => updateElement(selectedElementData.id, { width: parseInt(e.target.value) || 20 })}
+                              className="bg-dark-light text-white rounded px-2 py-1 text-sm border border-gray-700 focus:border-secondary focus:outline-none"
+                              placeholder="W"
+                              min="20"
+                            />
+                            <input
+                              type="number"
+                              value={Math.round(selectedElementData.height)}
+                              onChange={(e) => updateElement(selectedElementData.id, { height: parseInt(e.target.value) || 20 })}
+                              className="bg-dark-light text-white rounded px-2 py-1 text-sm border border-gray-700 focus:border-secondary focus:outline-none"
+                              placeholder="H"
+                              min="20"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Text-specific properties */}
+                        {selectedElementData.type === 'text' && (
+                          <>
+                            <div>
+                              <label className="block text-xs text-gray-400 mb-1">Font Size</label>
+                              <input
+                                type="number"
+                                value={selectedElementData.style?.fontSize || 16}
+                                onChange={(e) => updateElement(selectedElementData.id, { 
+                                  style: { ...selectedElementData.style, fontSize: parseInt(e.target.value) || 16 }
+                                })}
+                                className="w-full bg-dark-light text-white rounded px-2 py-1 text-sm border border-gray-700 focus:border-secondary focus:outline-none"
+                                min="8"
+                                max="72"
+                              />
+                            </div>
                             
-                            <div className="relative">
+                            <div>
+                              <label className="block text-xs text-gray-400 mb-1">Color</label>
+                              <input
+                                type="color"
+                                value={selectedElementData.style?.color || '#000000'}
+                                onChange={(e) => updateElement(selectedElementData.id, { 
+                                  style: { ...selectedElementData.style, color: e.target.value }
+                                })}
+                                className="w-full h-8 rounded border border-gray-700"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-xs text-gray-400 mb-1">Font</label>
+                              <select
+                                value={selectedElementData.style?.fontFamily || 'Arial, sans-serif'}
+                                onChange={(e) => updateElement(selectedElementData.id, { 
+                                  style: { ...selectedElementData.style, fontFamily: e.target.value }
+                                })}
+                                className="w-full bg-dark-light text-white rounded px-2 py-1 text-sm border border-gray-700 focus:border-secondary focus:outline-none"
+                              >
+                                {fonts.map(font => (
+                                  <option key={font.value} value={font.value}>{font.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </>
+                        )}
+
+                        {/* Emoji-specific properties */}
+                        {selectedElementData.type === 'emoji' && (
+                          <div>
+                            <label className="block text-xs text-gray-400 mb-1">Size</label>
+                            <input
+                              type="number"
+                              value={selectedElementData.style?.fontSize || 32}
+                              onChange={(e) => updateElement(selectedElementData.id, { 
+                                style: { ...selectedElementData.style, fontSize: parseInt(e.target.value) || 32 }
+                              })}
+                              className="w-full bg-dark-light text-white rounded px-2 py-1 text-sm border border-gray-700 focus:border-secondary focus:outline-none"
+                              min="16"
+                              max="128"
+                            />
+                          </div>
+                        )}
+
+                        {/* Shape-specific properties */}
+                        {selectedElementData.type === 'shape' && (
+                          <div>
+                            <label className="block text-xs text-gray-400 mb-1">Color</label>
+                            <input
+                              type="color"
+                              value={selectedElementData.style?.color || '#FF6B9D'}
+                              onChange={(e) => updateElement(selectedElementData.id, { 
+                                style: { ...selectedElementData.style, color: e.target.value }
+                              })}
+                              className="w-full h-8 rounded border border-gray-700"
+                            />
+                          </div>
+                        )}
+
+                        {/* Delete button */}
+                        <button
+                          onClick={() => deleteElement(selectedElementData.id)}
+                          className="w-full bg-red-600 text-white rounded-lg py-2 font-semibold hover:bg-red-500 flex items-center justify-center space-x-2"
+                        >
+                          <Trash2 size={16} />
+                          <span>Delete Element</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Layers Panel */}
+                  <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
+                    <h3 className="text-white font-bold mb-3">Layers</h3>
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {elements
+                        .sort((a, b) => b.layer - a.layer)
+                        .map((element, index) => (
+                          <div
+                            key={element.id}
+                            onClick={() => setSelectedElement(element.id)}
+                            className={`p-2 rounded cursor-pointer transition-colors ${
+                              selectedElement === element.id
+                                ? 'bg-secondary/20 border border-secondary'
+                                : 'bg-gray-700 hover:bg-gray-600'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-white text-sm">
+                                {element.type === 'text' ? `Text: ${element.content.slice(0, 10)}...` :
+                                 element.type === 'emoji' ? `Emoji: ${element.content}` :
+                                 element.type === 'shape' ? `Shape: ${element.content}` :
+                                 `Image: ${element.content.slice(0, 10)}...`}
+                              </span>
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setLayerMenuOpen(layerMenuOpen === element.id ? null : element.id);
+                                  setSelectedElement(selectedElement === element.id ? null : element.id);
                                 }}
-                                className="p-1 text-gray-400 hover:text-white transition-colors"
+                                className="text-gray-400 hover:text-white"
                               >
-                                <MoreVertical size={12} />
+                                {selectedElement === element.id ? <EyeOff size={14} /> : <Eye size={14} />}
                               </button>
-                              
-                              {layerMenuOpen === element.id && (
-                                <div className="absolute right-0 top-6 bg-dark-light border border-gray-600 rounded-lg shadow-lg z-50 min-w-32">
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      moveElementToFront(element.id);
-                                      setLayerMenuOpen(null);
-                                    }}
-                                    className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700 flex items-center space-x-2"
-                                  >
-                                    <ArrowUp size={12} />
-                                    <span>To Front</span>
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      moveElementUp(element.id);
-                                      setLayerMenuOpen(null);
-                                    }}
-                                    className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700 flex items-center space-x-2"
-                                  >
-                                    <ChevronUp size={12} />
-                                    <span>Move Up</span>
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      moveElementDown(element.id);
-                                      setLayerMenuOpen(null);
-                                    }}
-                                    className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700 flex items-center space-x-2"
-                                  >
-                                    <ChevronDown size={12} />
-                                    <span>Move Down</span>
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      moveElementToBack(element.id);
-                                      setLayerMenuOpen(null);
-                                    }}
-                                    className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700 flex items-center space-x-2"
-                                  >
-                                    <ArrowDown size={12} />
-                                    <span>To Back</span>
-                                  </button>
-                                  <hr className="border-gray-600" />
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      duplicateElement(element.id);
-                                      setLayerMenuOpen(null);
-                                    }}
-                                    className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700"
-                                  >
-                                    Duplicate
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      deleteElement(element.id);
-                                      setLayerMenuOpen(null);
-                                    }}
-                                    className="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-gray-700"
-                                  >
-                                    Delete
-                                  </button>
-                                </div>
-                              )}
                             </div>
                           </div>
+                        ))}
+                      
+                      {elements.length === 0 && (
+                        <div className="text-center py-4 text-gray-400">
+                          <Layers size={24} className="mx-auto mb-2 opacity-50" />
+                          <p className="text-sm">No elements yet</p>
                         </div>
-                      </div>
-                    ))}
-                    
-                    {elements.length === 0 && (
-                      <div className="text-center py-4 text-gray-400">
-                        <Layers size={32} className="mx-auto mb-2 opacity-50" />
-                        <p className="text-sm font-hand">No layers yet</p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Canvas */}
-            <div className="lg:col-span-2">
-              <div className="bg-dark-card rounded-xl p-6 border border-gray-800">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-white font-bold font-sketch">🎨 Canvas</h3>
-                  <div className="flex items-center space-x-2">
-                    <span className="text-gray-400 text-sm font-hand">
-                      {canvasSize.width} × {canvasSize.height}
-                    </span>
-                    <button
-                      onClick={() => setShowSaveModal(true)}
-                      disabled={elements.length === 0}
-                      className="bg-gradient-to-r from-primary to-purple text-white px-4 py-2 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed doodle-btn"
-                    >
-                      <Save size={16} className="inline mr-2" />
-                      Save Sticker
-                    </button>
+                      )}
+                    </div>
                   </div>
                 </div>
+              </motion.div>
+            )}
 
-                <div className="flex justify-center">
-                  <div
-                    ref={canvasRef}
-                    className="relative bg-white rounded-lg border-2 border-dashed border-gray-600 overflow-hidden"
-                    style={{
-                      width: canvasSize.width,
-                      height: canvasSize.height,
-                      backgroundImage: showGrid 
-                        ? 'linear-gradient(rgba(0,0,0,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.1) 1px, transparent 1px)'
-                        : undefined,
-                      backgroundSize: showGrid ? '20px 20px' : undefined
-                    }}
-                    onMouseDown={(e) => handleMouseDown(e)}
+            {/* Browse Tab */}
+            {activeTab === 'browse' && (
+              <motion.div
+                key="browse"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="space-y-4"
+              >
+                {/* Search and Filter */}
+                <div className="flex space-x-4 max-w-md mx-auto">
+                  <div className="flex-1 relative">
+                    <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search stickers..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 bg-dark-card text-white rounded-lg border border-gray-700 focus:border-secondary focus:outline-none"
+                    />
+                  </div>
+                  <select
+                    value={filterCategory}
+                    onChange={(e) => setFilterCategory(e.target.value)}
+                    className="bg-dark-card text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-secondary focus:outline-none"
                   >
-                    {getSortedElements().map(renderElement)}
-                    
-                    {elements.length === 0 && (
-                      <div className="absolute inset-0 flex items-center justify-center text-gray-400">
-                        <div className="text-center">
-                          <Palette size={48} className="mx-auto mb-2 opacity-50" />
-                          <p className="font-hand">Start creating your sticker!</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                    <option value="all">All Categories</option>
+                    <option value="custom">Custom</option>
+                    <option value="wholesome">Wholesome</option>
+                    <option value="roast">Roast</option>
+                    <option value="meme">Meme</option>
+                  </select>
                 </div>
-              </div>
-            </div>
 
-            {/* Properties Panel */}
-            <div className="lg:col-span-1">
-              <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
-                <h3 className="text-white font-bold mb-3 font-sketch">⚙️ Properties</h3>
-                
-                {selectedElement ? (
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
-                        Element Type
-                      </label>
-                      <div className="text-white font-semibold capitalize">
-                        {selectedElement.type}
-                      </div>
-                    </div>
-
-                    {selectedElement.type === 'text' && (
-                      <>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Text Content
-                          </label>
-                          <input
-                            type="text"
-                            value={selectedElement.content}
-                            onChange={(e) => updateElementProperty(selectedElement.id, 'content', e.target.value)}
-                            className="w-full bg-dark-light text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-primary focus:outline-none"
-                          />
-                        </div>
-                        
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Font Size
-                          </label>
-                          <input
-                            type="range"
-                            min="8"
-                            max="72"
-                            value={selectedElement.style?.fontSize || 16}
-                            onChange={(e) => updateElementProperty(selectedElement.id, 'style.fontSize', parseInt(e.target.value))}
-                            className="w-full"
-                          />
-                          <div className="text-xs text-gray-400 mt-1">
-                            {selectedElement.style?.fontSize || 16}px
-                          </div>
-                        </div>
-                        
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Color
-                          </label>
-                          <input
-                            type="color"
-                            value={selectedElement.style?.color || '#ffffff'}
-                            onChange={(e) => updateElementProperty(selectedElement.id, 'style.color', e.target.value)}
-                            className="w-full h-10 rounded-lg border border-gray-700"
-                          />
-                        </div>
-                        
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Font Family
-                          </label>
-                          <select
-                            value={selectedElement.style?.fontFamily || 'Arial'}
-                            onChange={(e) => updateElementProperty(selectedElement.id, 'style.fontFamily', e.target.value)}
-                            className="w-full bg-dark-light text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-primary focus:outline-none"
-                          >
-                            <option value="Arial">Arial</option>
-                            <option value="Helvetica">Helvetica</option>
-                            <option value="Times New Roman">Times New Roman</option>
-                            <option value="Courier New">Courier New</option>
-                            <option value="Georgia">Georgia</option>
-                            <option value="Verdana">Verdana</option>
-                          </select>
-                        </div>
-                        
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Font Weight
-                          </label>
-                          <select
-                            value={selectedElement.style?.fontWeight || 'normal'}
-                            onChange={(e) => updateElementProperty(selectedElement.id, 'style.fontWeight', e.target.value)}
-                            className="w-full bg-dark-light text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-primary focus:outline-none"
-                          >
-                            <option value="normal">Normal</option>
-                            <option value="bold">Bold</option>
-                            <option value="lighter">Lighter</option>
-                          </select>
-                        </div>
-                      </>
-                    )}
-
-                    {selectedElement.type === 'emoji' && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">
-                          Emoji
-                        </label>
-                        <input
-                          type="text"
-                          value={selectedElement.content}
-                          onChange={(e) => updateElementProperty(selectedElement.id, 'content', e.target.value)}
-                          className="w-full bg-dark-light text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-primary focus:outline-none text-center text-2xl"
-                          maxLength={2}
-                        />
-                      </div>
-                    )}
-
-                    {selectedElement.type === 'image' && selectedElement.content !== 'uploaded-image' && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">
-                          Background Color
-                        </label>
-                        <input
-                          type="color"
-                          value={selectedElement.style?.backgroundColor || '#FF6B9D'}
-                          onChange={(e) => updateElementProperty(selectedElement.id, 'style.backgroundColor', e.target.value)}
-                          className="w-full h-10 rounded-lg border border-gray-700"
-                        />
-                      </div>
-                    )}
-
-                    {/* Position and Size */}
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-1">X</label>
-                        <input
-                          type="number"
-                          value={Math.round(selectedElement.x)}
-                          onChange={(e) => updateElementProperty(selectedElement.id, 'x', parseInt(e.target.value) || 0)}
-                          className="w-full bg-dark-light text-white rounded px-2 py-1 text-sm border border-gray-700 focus:border-primary focus:outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-1">Y</label>
-                        <input
-                          type="number"
-                          value={Math.round(selectedElement.y)}
-                          onChange={(e) => updateElementProperty(selectedElement.id, 'y', parseInt(e.target.value) || 0)}
-                          className="w-full bg-dark-light text-white rounded px-2 py-1 text-sm border border-gray-700 focus:border-primary focus:outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-1">Width</label>
-                        <input
-                          type="number"
-                          value={Math.round(selectedElement.width)}
-                          onChange={(e) => updateElementProperty(selectedElement.id, 'width', Math.max(20, parseInt(e.target.value) || 20))}
-                          className="w-full bg-dark-light text-white rounded px-2 py-1 text-sm border border-gray-700 focus:border-primary focus:outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-1">Height</label>
-                        <input
-                          type="number"
-                          value={Math.round(selectedElement.height)}
-                          onChange={(e) => updateElementProperty(selectedElement.id, 'height', Math.max(20, parseInt(e.target.value) || 20))}
-                          className="w-full bg-dark-light text-white rounded px-2 py-1 text-sm border border-gray-700 focus:border-primary focus:outline-none"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Transform Controls */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
-                        Rotation
-                      </label>
-                      <input
-                        type="range"
-                        min="-180"
-                        max="180"
-                        value={selectedElement.rotation}
-                        onChange={(e) => updateElementProperty(selectedElement.id, 'rotation', parseInt(e.target.value))}
-                        className="w-full"
-                      />
-                      <div className="text-xs text-gray-400 mt-1">
-                        {selectedElement.rotation}°
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        onClick={() => updateElementProperty(selectedElement.id, 'flipX', !selectedElement.flipX)}
-                        className={`p-2 rounded-lg transition-colors ${
-                          selectedElement.flipX ? 'bg-primary text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                        }`}
+                {/* Stickers Grid */}
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                  {stickers
+                    .filter(sticker => 
+                      (filterCategory === 'all' || sticker.tags.includes(filterCategory)) &&
+                      (searchTerm === '' || sticker.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                       sticker.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase())))
+                    )
+                    .map((sticker) => (
+                      <motion.div
+                        key={sticker.id}
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="bg-dark-card rounded-xl p-3 border border-gray-800 hover:border-secondary transition-colors cursor-pointer"
                       >
-                        <FlipHorizontal size={16} className="mx-auto" />
-                      </button>
-                      <button
-                        onClick={() => updateElementProperty(selectedElement.id, 'flipY', !selectedElement.flipY)}
-                        className={`p-2 rounded-lg transition-colors ${
-                          selectedElement.flipY ? 'bg-primary text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                        }`}
-                      >
-                        <FlipVertical size={16} className="mx-auto" />
-                      </button>
-                    </div>
+                        <div className="aspect-square bg-gray-700 rounded-lg mb-2 flex items-center justify-center">
+                          <span className="text-2xl">🎨</span>
+                        </div>
+                        <h4 className="text-white font-semibold text-sm mb-1">{sticker.name}</h4>
+                        <div className="flex flex-wrap gap-1">
+                          {sticker.tags.slice(0, 2).map(tag => (
+                            <span key={tag} className="px-2 py-1 bg-secondary/20 text-secondary rounded text-xs">
+                              #{tag}
+                            </span>
+                          ))}
+                        </div>
+                      </motion.div>
+                    ))}
+                </div>
 
-                    {/* Layer Controls */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
-                        Layer Order
-                      </label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          onClick={() => moveElementUp(selectedElement.id)}
-                          className="bg-gray-700 text-gray-300 rounded-lg py-2 text-sm hover:bg-gray-600 transition-colors"
-                        >
-                          <ChevronUp size={16} className="inline mr-1" />
-                          Up
-                        </button>
-                        <button
-                          onClick={() => moveElementDown(selectedElement.id)}
-                          className="bg-gray-700 text-gray-300 rounded-lg py-2 text-sm hover:bg-gray-600 transition-colors"
-                        >
-                          <ChevronDown size={16} className="inline mr-1" />
-                          Down
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Delete Button */}
-                    <button
-                      onClick={() => deleteElement(selectedElement.id)}
-                      className="w-full bg-red-500 text-white rounded-lg py-2 font-semibold hover:bg-red-400 transition-colors"
-                    >
-                      <Trash2 size={16} className="inline mr-2" />
-                      Delete Element
-                    </button>
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-gray-400">
-                    <MousePointer size={48} className="mx-auto mb-4 opacity-50" />
-                    <p className="font-hand">Select an element to edit properties</p>
+                {stickers.length === 0 && (
+                  <div className="text-center py-12 text-gray-400">
+                    <Search size={48} className="mx-auto mb-4 opacity-50" />
+                    <p className="text-lg">No stickers found</p>
+                    <p className="text-sm">Create your first sticker to get started!</p>
                   </div>
                 )}
-              </div>
-            </div>
-          </div>
+              </motion.div>
+            )}
+
+            {/* Packs Tab */}
+            {activeTab === 'packs' && (
+              <motion.div
+                key="packs"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="space-y-4"
+              >
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {stickerPacks.map((pack) => (
+                    <motion.div
+                      key={pack.id}
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="bg-dark-card rounded-xl p-4 border border-gray-800"
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-white font-bold">{pack.name}</h3>
+                        {pack.owned ? (
+                          <span className="px-2 py-1 bg-green-500/20 text-green-400 rounded text-xs">
+                            Owned
+                          </span>
+                        ) : (
+                          <span className="px-2 py-1 bg-accent/20 text-accent rounded text-xs">
+                            {pack.price} CP
+                          </span>
+                        )}
+                      </div>
+                      
+                      <p className="text-gray-400 text-sm mb-3">{pack.description}</p>
+                      
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-300 text-sm">{pack.count} stickers</span>
+                        {!pack.owned && (
+                          <button
+                            onClick={() => purchaseStickerPack(pack.id, currentUser?.id || 'user-1')}
+                            disabled={!currentUser || currentUser.clownPoints < pack.price}
+                            className="px-3 py-1 bg-accent text-dark rounded font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
+                          >
+                            <ShoppingCart size={12} />
+                            <span>Buy</span>
+                          </button>
+                        )}
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
-      {/* Save Modal */}
+      {/* Save Sticker Modal */}
       <AnimatePresence>
         {showSaveModal && (
           <motion.div
@@ -1324,12 +1184,10 @@ export const StickersView = () => {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-dark-card rounded-2xl p-6 w-full max-w-md"
+              className="bg-dark-card rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
-              <h2 className="text-xl font-bold text-white mb-4 font-sketch">
-                💾 Save Sticker
-              </h2>
+              <h2 className="text-xl font-bold text-white mb-4">Save Sticker</h2>
 
               <div className="space-y-4">
                 <div>
@@ -1340,47 +1198,72 @@ export const StickersView = () => {
                     type="text"
                     value={stickerName}
                     onChange={(e) => setStickerName(e.target.value)}
-                    className="w-full bg-dark-light text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-primary focus:outline-none"
+                    className="w-full bg-dark-light text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-secondary focus:outline-none"
                     placeholder="My awesome sticker"
-                    autoFocus
                   />
                 </div>
 
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="block text-sm font-medium text-gray-300">
-                      Sticker Pack
-                    </label>
-                    <button
-                      onClick={() => setCreateNewPack(!createNewPack)}
-                      className="text-xs text-primary hover:text-white transition-colors"
-                    >
-                      {createNewPack ? 'Use Existing' : 'Create New'}
-                    </button>
-                  </div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Tags (comma separated)
+                  </label>
+                  <input
+                    type="text"
+                    value={stickerTags.join(', ')}
+                    onChange={(e) => setStickerTags(e.target.value.split(',').map(tag => tag.trim()).filter(Boolean))}
+                    className="w-full bg-dark-light text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-secondary focus:outline-none"
+                    placeholder="funny, meme, custom"
+                  />
+                </div>
 
-                  {createNewPack ? (
-                    <input
-                      type="text"
-                      value={newPackName}
-                      onChange={(e) => setNewPackName(e.target.value)}
-                      className="w-full bg-dark-light text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-primary focus:outline-none"
-                      placeholder="New pack name"
-                    />
-                  ) : (
-                    <select
-                      value={selectedPackId}
-                      onChange={(e) => setSelectedPackId(e.target.value)}
-                      className="w-full bg-dark-light text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-primary focus:outline-none"
-                    >
-                      {stickerPacks.filter(pack => pack.owned).map((pack) => (
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Save to Pack
+                  </label>
+                  <select
+                    value={selectedPackId}
+                    onChange={(e) => setSelectedPackId(e.target.value)}
+                    className="w-full bg-dark-light text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-secondary focus:outline-none"
+                  >
+                    <option value="">Create new pack...</option>
+                    {stickerPacks
+                      .filter(pack => pack.owned)
+                      .map(pack => (
                         <option key={pack.id} value={pack.id}>
                           {pack.name} ({pack.count} stickers)
                         </option>
                       ))}
-                    </select>
-                  )}
+                  </select>
                 </div>
+
+                {!selectedPackId && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        New Pack Name
+                      </label>
+                      <input
+                        type="text"
+                        value={newPackName}
+                        onChange={(e) => setNewPackName(e.target.value)}
+                        className="w-full bg-dark-light text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-secondary focus:outline-none"
+                        placeholder="My Sticker Pack"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Pack Description
+                      </label>
+                      <textarea
+                        value={newPackDescription}
+                        onChange={(e) => setNewPackDescription(e.target.value)}
+                        className="w-full bg-dark-light text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-secondary focus:outline-none h-20 resize-none"
+                        placeholder="Describe your pack..."
+                      />
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="flex space-x-3 mt-6">
@@ -1391,8 +1274,8 @@ export const StickersView = () => {
                   Cancel
                 </button>
                 <button
-                  onClick={handleSaveSticker}
-                  className="flex-1 py-2 bg-gradient-to-r from-primary to-purple text-white rounded-lg font-semibold hover:from-primary/90 hover:to-purple/90 transition-colors"
+                  onClick={confirmSaveSticker}
+                  className="flex-1 py-2 bg-secondary text-white rounded-lg font-semibold hover:bg-secondary/90 transition-colors"
                 >
                   Save Sticker
                 </button>
@@ -1401,14 +1284,6 @@ export const StickersView = () => {
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* Click outside to close layer menu */}
-      {layerMenuOpen && (
-        <div 
-          className="fixed inset-0 z-40" 
-          onClick={() => setLayerMenuOpen(null)}
-        />
-      )}
     </div>
   );
 };
