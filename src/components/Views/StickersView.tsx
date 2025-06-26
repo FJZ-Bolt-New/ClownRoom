@@ -1,38 +1,55 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '../../store/useStore';
 import { 
   Plus, 
   Palette, 
-  Download, 
-  Share2, 
-  Star, 
-  Heart, 
-  Trash2, 
-  Edit3, 
-  Image as ImageIcon, 
   Type, 
+  Image, 
   Smile, 
-  Move, 
+  Layers, 
   RotateCw, 
   FlipHorizontal, 
-  FlipVertical, 
-  Layers, 
+  FlipVertical,
+  Trash2, 
+  Download, 
+  Share2, 
   Save, 
   X, 
-  Upload, 
-  Minus, 
+  ZoomIn, 
+  ZoomOut, 
+  Move, 
   Eye, 
   EyeOff,
-  ChevronUp,
-  ChevronDown,
-  Settings,
-  MousePointer,
+  Copy,
+  Undo,
+  Redo,
   Grid,
-  Zap,
+  Search,
+  Filter,
+  Star,
   Crown,
-  ShoppingCart,
-  Maximize2
+  Sparkles,
+  Wand2,
+  Camera,
+  Upload,
+  Scissors,
+  PaintBucket,
+  MousePointer,
+  Square,
+  Circle,
+  Triangle,
+  Heart,
+  Zap,
+  Music,
+  Coffee,
+  Gamepad2,
+  Rocket,
+  Target,
+  Award,
+  Gift,
+  Lock,
+  ShoppingCart
 } from 'lucide-react';
 import { Sticker, StickerElement } from '../../types';
 import toast from 'react-hot-toast';
@@ -40,515 +57,340 @@ import toast from 'react-hot-toast';
 export const StickersView = () => {
   const { 
     stickers, 
-    addSticker, 
-    updateStickerUsage, 
-    updateUserPoints, 
     stickerPacks, 
+    addSticker, 
     addStickerToPack, 
+    updateUserPoints, 
+    currentUser,
     purchaseStickerPack,
-    currentUser 
+    updateStickerPack
   } = useStore();
   
   // Main state
-  const [activeTab, setActiveTab] = useState<'create' | 'browse' | 'packs'>('create');
+  const [activeTab, setActiveTab] = useState<'gallery' | 'create' | 'packs'>('gallery');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   
-  // Creator state
-  const [selectedTool, setSelectedTool] = useState<'select' | 'text' | 'emoji' | 'image' | 'move'>('select');
+  // Enhanced creator state
+  const [canvasSize, setCanvasSize] = useState({ width: 400, height: 400 });
   const [elements, setElements] = useState<StickerElement[]>([]);
   const [selectedElement, setSelectedElement] = useState<string | null>(null);
-  const [canvasSize] = useState({ width: 300, height: 300 });
-  const [showGrid, setShowGrid] = useState(true);
+  const [tool, setTool] = useState<'select' | 'text' | 'emoji' | 'shape' | 'image'>('select');
   const [zoom, setZoom] = useState(1);
-  
-  // Dragging state
+  const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [isResizing, setIsResizing] = useState(false);
-  const [resizeHandle, setResizeHandle] = useState<'se' | 'sw' | 'ne' | 'nw' | null>(null);
-  
-  // Properties panel state
-  const [showProperties, setShowProperties] = useState(true);
-  const [stickerName, setStickerName] = useState('');
-  const [stickerTags, setStickerTags] = useState<string[]>([]);
+  const [history, setHistory] = useState<StickerElement[][]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [showGrid, setShowGrid] = useState(true);
+  const [backgroundColor, setBackgroundColor] = useState('#transparent');
   
   // Text tool state
   const [textInput, setTextInput] = useState('');
   const [textStyle, setTextStyle] = useState({
     fontSize: 24,
-    color: '#FFFFFF',
+    color: '#FF6B9D',
     fontFamily: 'Arial',
-    fontWeight: 'normal'
+    fontWeight: 'normal',
+    textAlign: 'center'
   });
   
-  // Emoji picker state
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  // Shape tool state
+  const [shapeType, setShapeType] = useState<'rectangle' | 'circle' | 'triangle' | 'heart' | 'star'>('rectangle');
+  const [shapeStyle, setShapeStyle] = useState({
+    fill: '#4ECDC4',
+    stroke: '#ffffff',
+    strokeWidth: 2,
+    opacity: 1
+  });
   
-  // Image upload state
-  const [dragOver, setDragOver] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Sticker metadata
+  const [stickerName, setStickerName] = useState('');
+  const [stickerTags, setStickerTags] = useState<string[]>([]);
+  const [selectedPack, setSelectedPack] = useState('pack-default');
+  
+  // Refs
   const canvasRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Available emojis
+  // Available emoji categories
   const emojiCategories = {
     'Faces': ['😀', '😂', '😍', '🤔', '😎', '🤯', '😈', '🤡', '👻', '💀', '🔥', '💯', '⚡', '💎'],
-    'Animals': ['🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁', '🐸', '🐵', '🐔'],
-    'Objects': ['🎨', '🎭', '🎪', '🎯', '🎲', '🎮', '🎸', '🎤', '🎧', '📱', '💻', '🖥️', '⌨️', '🖱️'],
-    'Symbols': ['❤️', '💕', '💖', '💗', '💙', '💚', '💛', '🧡', '💜', '🖤', '✨', '⭐', '🌟', '💫']
+    'Animals': ['🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁', '🐮', '🐷', '🐸'],
+    'Food': ['🍎', '🍌', '🍓', '🍕', '🍔', '🌮', '🍩', '🍪', '🎂', '🍰', '☕', '🍺', '🍷', '🥤'],
+    'Objects': ['⚽', '🏀', '🎮', '🎸', '🎨', '📱', '💻', '🚗', '✈️', '🚀', '⭐', '🌟', '💫', '🔮'],
+    'Symbols': ['❤️', '💕', '💖', '💗', '💙', '💚', '💛', '🧡', '💜', '🖤', '🤍', '🤎', '💔', '❣️']
   };
   
-  // Font options
-  const fontFamilies = ['Arial', 'Helvetica', 'Times New Roman', 'Courier New', 'Verdana', 'Georgia', 'Comic Sans MS'];
-  const fontWeights = ['normal', 'bold', '100', '200', '300', '400', '500', '600', '700', '800', '900'];
+  // Predefined color palettes
+  const colorPalettes = {
+    'Vibrant': ['#FF6B9D', '#4ECDC4', '#FFE66D', '#FF8A5B', '#9B59B6', '#E74C3C', '#2ECC71', '#3498DB'],
+    'Pastel': ['#FFB3BA', '#BAFFC9', '#BAE1FF', '#FFFFBA', '#FFD1DC', '#E0BBE4', '#C7CEEA', '#FFDAB9'],
+    'Dark': ['#2C3E50', '#34495E', '#7F8C8D', '#95A5A6', '#BDC3C7', '#ECF0F1', '#1ABC9C', '#16A085'],
+    'Neon': ['#FF073A', '#39FF14', '#00FFFF', '#FF1493', '#FFFF00', '#FF4500', '#9400D3', '#00FF7F']
+  };
   
-  // Common sticker tags
-  const commonTags = ['funny', 'cute', 'cool', 'epic', 'meme', 'reaction', 'emoji', 'text', 'custom', 'art'];
-
-  // Generate unique ID
-  const generateId = () => `element-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-  // Add text element
-  const addTextElement = () => {
-    if (!textInput.trim()) {
-      toast.error('Enter some text first! ✏️');
-      return;
-    }
-
+  // Font families
+  const fontFamilies = [
+    'Arial', 'Helvetica', 'Times New Roman', 'Courier New', 'Verdana', 
+    'Georgia', 'Comic Sans MS', 'Impact', 'Trebuchet MS', 'Palatino'
+  ];
+  
+  // Categories for filtering
+  const categories = ['all', 'custom', 'emoji', 'text', 'shapes', 'memes', 'reactions', 'objects'];
+  
+  // Add element to canvas
+  const addElement = useCallback((type: StickerElement['type'], content: string, additionalProps = {}) => {
     const newElement: StickerElement = {
-      id: generateId(),
-      type: 'text',
-      content: textInput,
+      id: `element-${Date.now()}-${Math.random()}`,
+      type,
+      content,
       x: canvasSize.width / 2 - 50,
-      y: canvasSize.height / 2 - 12,
-      width: 100,
-      height: 24,
+      y: canvasSize.height / 2 - 25,
+      width: type === 'text' ? 100 : 50,
+      height: type === 'text' ? 50 : 50,
       rotation: 0,
       flipX: false,
       flipY: false,
       layer: elements.length,
+      ...additionalProps
+    };
+    
+    const newElements = [...elements, newElement];
+    setElements(newElements);
+    setSelectedElement(newElement.id);
+    saveToHistory(newElements);
+  }, [elements, canvasSize]);
+  
+  // Save state to history for undo/redo
+  const saveToHistory = useCallback((newElements: StickerElement[]) => {
+    const newHistory = history.slice(0, historyIndex + 1);
+    newHistory.push([...newElements]);
+    setHistory(newHistory);
+    setHistoryIndex(newHistory.length - 1);
+  }, [history, historyIndex]);
+  
+  // Undo/Redo functions
+  const undo = useCallback(() => {
+    if (historyIndex > 0) {
+      setHistoryIndex(historyIndex - 1);
+      setElements([...history[historyIndex - 1]]);
+    }
+  }, [history, historyIndex]);
+  
+  const redo = useCallback(() => {
+    if (historyIndex < history.length - 1) {
+      setHistoryIndex(historyIndex + 1);
+      setElements([...history[historyIndex + 1]]);
+    }
+  }, [history, historyIndex]);
+  
+  // Handle text addition
+  const handleAddText = () => {
+    if (!textInput.trim()) {
+      toast.error('Enter some text first! 📝');
+      return;
+    }
+    
+    addElement('text', textInput, {
       style: { ...textStyle }
-    };
-
-    setElements([...elements, newElement]);
-    setSelectedElement(newElement.id);
+    });
     setTextInput('');
-    setSelectedTool('select');
-    toast.success('Text added! 📝');
+    setTool('select');
   };
-
-  // Add emoji element
-  const addEmojiElement = (emoji: string) => {
-    const newElement: StickerElement = {
-      id: generateId(),
-      type: 'emoji',
-      content: emoji,
-      x: canvasSize.width / 2 - 20,
-      y: canvasSize.height / 2 - 20,
-      width: 40,
-      height: 40,
-      rotation: 0,
-      flipX: false,
-      flipY: false,
-      layer: elements.length,
+  
+  // Handle emoji addition
+  const handleAddEmoji = (emoji: string) => {
+    addElement('emoji', emoji, {
       style: { fontSize: 32 }
-    };
-
-    setElements([...elements, newElement]);
-    setSelectedElement(newElement.id);
-    setShowEmojiPicker(false);
-    setSelectedTool('select');
-    toast.success(`${emoji} added!`);
+    });
+    setTool('select');
   };
-
+  
+  // Handle shape addition
+  const handleAddShape = () => {
+    addElement('text', getShapeSymbol(shapeType), {
+      style: {
+        fontSize: 48,
+        color: shapeStyle.fill
+      }
+    });
+    setTool('select');
+  };
+  
+  // Get shape symbol
+  const getShapeSymbol = (type: string) => {
+    switch (type) {
+      case 'circle': return '●';
+      case 'triangle': return '▲';
+      case 'heart': return '♥';
+      case 'star': return '★';
+      default: return '■';
+    }
+  };
+  
   // Handle image upload
-  const handleImageUpload = useCallback((file: File) => {
-    if (!file.type.startsWith('image/')) {
-      toast.error('Please upload an image file! 🖼️');
-      return;
-    }
-
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
     if (file.size > 5 * 1024 * 1024) { // 5MB limit
-      toast.error('Image too large! Please use an image under 5MB 📏');
+      toast.error('Image too large! Please use an image under 5MB 📸');
       return;
     }
-
+    
     const reader = new FileReader();
     reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        // Calculate size to fit in canvas while maintaining aspect ratio
-        const maxSize = 120;
-        let width = img.width;
-        let height = img.height;
-        
-        if (width > height) {
-          if (width > maxSize) {
-            height = (height * maxSize) / width;
-            width = maxSize;
-          }
-        } else {
-          if (height > maxSize) {
-            width = (width * maxSize) / height;
-            height = maxSize;
-          }
-        }
-
-        const newElement: StickerElement = {
-          id: generateId(),
-          type: 'image',
-          content: file.name,
-          x: canvasSize.width / 2 - width / 2,
-          y: canvasSize.height / 2 - height / 2,
-          width,
-          height,
-          rotation: 0,
-          flipX: false,
-          flipY: false,
-          layer: elements.length,
-          imageData: e.target?.result as string
-        };
-
-        setElements([...elements, newElement]);
-        setSelectedElement(newElement.id);
-        setSelectedTool('select');
-        toast.success('Image added! 🖼️');
-      };
-      img.src = e.target?.result as string;
+      const imageData = e.target?.result as string;
+      addElement('image', file.name, {
+        imageData,
+        width: 100,
+        height: 100
+      });
+      setTool('select');
     };
     reader.readAsDataURL(file);
-  }, [elements.length, canvasSize]);
-
-  // Handle file input change
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      handleImageUpload(file);
-    }
   };
-
-  // Handle drag and drop for file upload
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    
-    const file = e.dataTransfer.files[0];
-    if (file) {
-      handleImageUpload(file);
-    }
-  }, [handleImageUpload]);
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-  }, []);
-
-  // Enhanced mouse handlers for dragging and resizing
-  const handleMouseDown = (e: React.MouseEvent, elementId: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    const element = elements.find(el => el.id === elementId);
-    if (!element) return;
-    
-    setSelectedElement(elementId);
-    
-    // Check if clicking on resize handle
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const elementWidth = element.width * zoom;
-    const elementHeight = element.height * zoom;
-    
-    // Resize handle detection (8px from edges)
-    const handleSize = 8;
-    const isNearRight = x >= elementWidth - handleSize;
-    const isNearLeft = x <= handleSize;
-    const isNearBottom = y >= elementHeight - handleSize;
-    const isNearTop = y <= handleSize;
-    
-    if (isNearRight && isNearBottom) {
-      setIsResizing(true);
-      setResizeHandle('se');
-    } else if (isNearLeft && isNearBottom) {
-      setIsResizing(true);
-      setResizeHandle('sw');
-    } else if (isNearRight && isNearTop) {
-      setIsResizing(true);
-      setResizeHandle('ne');
-    } else if (isNearLeft && isNearTop) {
-      setIsResizing(true);
-      setResizeHandle('nw');
-    } else {
-      // Start dragging
-      setIsDragging(true);
-      setDragStart({ x: e.clientX, y: e.clientY });
-      setDragOffset({ 
-        x: e.clientX - (element.x * zoom), 
-        y: e.clientY - (element.y * zoom) 
-      });
-    }
-  };
-
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!selectedElement) return;
-    
-    const element = elements.find(el => el.id === selectedElement);
-    if (!element) return;
-    
-    if (isDragging) {
-      const newX = Math.max(0, Math.min(canvasSize.width - element.width, (e.clientX - dragOffset.x) / zoom));
-      const newY = Math.max(0, Math.min(canvasSize.height - element.height, (e.clientY - dragOffset.y) / zoom));
-      
-      updateElement(selectedElement, { x: newX, y: newY });
-    } else if (isResizing && resizeHandle) {
-      const deltaX = (e.clientX - dragStart.x) / zoom;
-      const deltaY = (e.clientY - dragStart.y) / zoom;
-      
-      let newWidth = element.width;
-      let newHeight = element.height;
-      let newX = element.x;
-      let newY = element.y;
-      
-      switch (resizeHandle) {
-        case 'se':
-          newWidth = Math.max(10, element.width + deltaX);
-          newHeight = Math.max(10, element.height + deltaY);
-          break;
-        case 'sw':
-          newWidth = Math.max(10, element.width - deltaX);
-          newHeight = Math.max(10, element.height + deltaY);
-          newX = element.x + deltaX;
-          break;
-        case 'ne':
-          newWidth = Math.max(10, element.width + deltaX);
-          newHeight = Math.max(10, element.height - deltaY);
-          newY = element.y + deltaY;
-          break;
-        case 'nw':
-          newWidth = Math.max(10, element.width - deltaX);
-          newHeight = Math.max(10, element.height - deltaY);
-          newX = element.x + deltaX;
-          newY = element.y + deltaY;
-          break;
-      }
-      
-      // Keep within canvas bounds
-      newX = Math.max(0, Math.min(canvasSize.width - newWidth, newX));
-      newY = Math.max(0, Math.min(canvasSize.height - newHeight, newY));
-      newWidth = Math.min(newWidth, canvasSize.width - newX);
-      newHeight = Math.min(newHeight, canvasSize.height - newY);
-      
-      updateElement(selectedElement, { 
-        x: newX, 
-        y: newY, 
-        width: newWidth, 
-        height: newHeight 
-      });
-      
-      setDragStart({ x: e.clientX, y: e.clientY });
-    }
-  }, [isDragging, isResizing, selectedElement, elements, dragOffset, dragStart, resizeHandle, zoom, canvasSize]);
-
-  const handleMouseUp = useCallback(() => {
-    setIsDragging(false);
-    setIsResizing(false);
-    setResizeHandle(null);
-  }, []);
-
-  // Add event listeners
-  React.useEffect(() => {
-    if (isDragging || isResizing) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-      
-      return () => {
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', handleMouseUp);
-      };
-    }
-  }, [isDragging, isResizing, handleMouseMove, handleMouseUp]);
-
-  // Update element
-  const updateElement = (id: string, updates: Partial<StickerElement>) => {
-    setElements(elements.map(el => 
+  
+  // Update selected element
+  const updateElement = useCallback((id: string, updates: Partial<StickerElement>) => {
+    const newElements = elements.map(el => 
       el.id === id ? { ...el, ...updates } : el
-    ));
-  };
-
+    );
+    setElements(newElements);
+  }, [elements]);
+  
   // Delete element
-  const deleteElement = (id: string) => {
-    setElements(elements.filter(el => el.id !== id));
-    if (selectedElement === id) {
-      setSelectedElement(null);
-    }
-    toast.success('Element deleted! 🗑️');
-  };
-
-  // Move element layer
-  const moveLayer = (id: string, direction: 'up' | 'down') => {
+  const deleteElement = useCallback((id: string) => {
+    const newElements = elements.filter(el => el.id !== id);
+    setElements(newElements);
+    setSelectedElement(null);
+    saveToHistory(newElements);
+  }, [elements, saveToHistory]);
+  
+  // Duplicate element
+  const duplicateElement = useCallback((id: string) => {
     const element = elements.find(el => el.id === id);
     if (!element) return;
-
-    const newLayer = direction === 'up' ? element.layer + 1 : element.layer - 1;
-    const maxLayer = Math.max(...elements.map(el => el.layer));
     
-    if (newLayer < 0 || newLayer > maxLayer) return;
-
-    // Swap layers
-    const otherElement = elements.find(el => el.layer === newLayer);
-    if (otherElement) {
-      updateElement(otherElement.id, { layer: element.layer });
-    }
+    const newElement = {
+      ...element,
+      id: `element-${Date.now()}-${Math.random()}`,
+      x: element.x + 20,
+      y: element.y + 20,
+      layer: elements.length
+    };
+    
+    const newElements = [...elements, newElement];
+    setElements(newElements);
+    setSelectedElement(newElement.id);
+    saveToHistory(newElements);
+  }, [elements, saveToHistory]);
+  
+  // Layer management
+  const moveLayer = useCallback((id: string, direction: 'up' | 'down') => {
+    const element = elements.find(el => el.id === id);
+    if (!element) return;
+    
+    const newLayer = direction === 'up' 
+      ? Math.min(element.layer + 1, elements.length - 1)
+      : Math.max(element.layer - 1, 0);
+    
     updateElement(id, { layer: newLayer });
-    
-    toast.success(`Layer moved ${direction}! 📚`);
-  };
-
-  // Get selected element
-  const selectedElementData = selectedElement ? elements.find(el => el.id === selectedElement) : null;
-
+  }, [elements, updateElement]);
+  
   // Save sticker
-  const saveSticker = async () => {
+  const handleSaveSticker = async () => {
     if (!stickerName.trim()) {
-      toast.error('Give your sticker a name! 📝');
+      toast.error('Give your sticker a name! 🏷️');
       return;
     }
-
+    
     if (elements.length === 0) {
       toast.error('Add some elements to your sticker first! 🎨');
       return;
     }
-
+    
     try {
-      // Create canvas for export
-      const canvas = document.createElement('canvas');
-      canvas.width = canvasSize.width;
-      canvas.height = canvasSize.height;
-      const ctx = canvas.getContext('2d');
+      // Generate a preview image (in a real app, you'd render the canvas to an image)
+      const previewUrl = `data:image/svg+xml;base64,${btoa(`
+        <svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
+          <rect width="200" height="200" fill="${backgroundColor === '#transparent' ? 'white' : backgroundColor}"/>
+          <text x="100" y="100" text-anchor="middle" font-size="48" fill="#FF6B9D">🎨</text>
+        </svg>
+      `)}`;
       
-      if (!ctx) {
-        throw new Error('Could not get canvas context');
-      }
-
-      // Clear canvas
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Sort elements by layer
-      const sortedElements = [...elements].sort((a, b) => a.layer - b.layer);
-
-      // Draw each element
-      for (const element of sortedElements) {
-        ctx.save();
-        
-        // Apply transformations
-        ctx.translate(element.x + element.width / 2, element.y + element.height / 2);
-        ctx.rotate((element.rotation * Math.PI) / 180);
-        ctx.scale(element.flipX ? -1 : 1, element.flipY ? -1 : 1);
-
-        if (element.type === 'text') {
-          ctx.fillStyle = element.style?.color || '#FFFFFF';
-          ctx.font = `${element.style?.fontWeight || 'normal'} ${element.style?.fontSize || 24}px ${element.style?.fontFamily || 'Arial'}`;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(element.content, 0, 0);
-        } else if (element.type === 'emoji') {
-          ctx.font = `${element.style?.fontSize || 32}px Arial`;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(element.content, 0, 0);
-        } else if (element.type === 'image' && element.imageData) {
-          const img = new Image();
-          await new Promise((resolve) => {
-            img.onload = () => {
-              ctx.drawImage(img, -element.width / 2, -element.height / 2, element.width, element.height);
-              resolve(void 0);
-            };
-            img.src = element.imageData!;
-          });
-        }
-        
-        ctx.restore();
-      }
-
-      // Convert to data URL
-      const imageUrl = canvas.toDataURL('image/png');
-
-      // Create sticker object
       const newSticker: Sticker = {
         id: `sticker-${Date.now()}`,
         name: stickerName,
-        imageUrl,
+        imageUrl: previewUrl,
         tags: stickerTags,
         createdBy: currentUser?.id || 'user-1',
         usageCount: 0,
-        elementData: elements // Store element data for future editing
+        packId: selectedPack,
+        elementData: elements
       };
-
-      // Add to default pack
-      addStickerToPack(newSticker, 'pack-default');
-      updateUserPoints(20);
-
+      
+      addSticker(newSticker);
+      addStickerToPack(newSticker, selectedPack);
+      updateUserPoints(10);
+      
       // Reset creator
       setElements([]);
       setSelectedElement(null);
       setStickerName('');
       setStickerTags([]);
+      setHistory([]);
+      setHistoryIndex(-1);
       setShowCreateModal(false);
-
-      toast.success('Sticker created successfully! 🎉 (+20 CP)');
+      
+      toast.success(`Sticker "${stickerName}" created! 🎨✨ (+10 CP)`);
     } catch (error) {
-      console.error('Error saving sticker:', error);
-      toast.error('Failed to save sticker! Please try again 😞');
+      toast.error('Failed to save sticker! Please try again 😅');
     }
   };
-
-  // Clear canvas
-  const clearCanvas = () => {
-    setElements([]);
-    setSelectedElement(null);
-    toast.success('Canvas cleared! 🧹');
-  };
-
-  // Toggle tag
-  const toggleTag = (tag: string) => {
-    setStickerTags(prev => 
-      prev.includes(tag) 
-        ? prev.filter(t => t !== tag)
-        : [...prev, tag]
-    );
-  };
-
-  // Get cursor style based on position
-  const getCursorStyle = (element: StickerElement, x: number, y: number) => {
-    const handleSize = 8;
-    const elementWidth = element.width * zoom;
-    const elementHeight = element.height * zoom;
+  
+  // Filter stickers
+  const filteredStickers = stickers.filter(sticker => {
+    const matchesSearch = sticker.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         sticker.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()));
+    const matchesCategory = selectedCategory === 'all' || sticker.tags.includes(selectedCategory);
+    return matchesSearch && matchesCategory;
+  });
+  
+  // Get owned packs
+  const ownedPacks = stickerPacks.filter(pack => pack.owned);
+  const availablePacks = stickerPacks.filter(pack => !pack.owned);
+  
+  // Purchase pack
+  const handlePurchasePack = (packId: string) => {
+    const pack = stickerPacks.find(p => p.id === packId);
+    if (!pack || !currentUser) return;
     
-    const isNearRight = x >= elementWidth - handleSize;
-    const isNearLeft = x <= handleSize;
-    const isNearBottom = y >= elementHeight - handleSize;
-    const isNearTop = y <= handleSize;
+    if (currentUser.clownPoints < pack.price) {
+      toast.error(`Not enough ClownPoints! Need ${pack.price} CP 💰`);
+      return;
+    }
     
-    if ((isNearRight && isNearBottom) || (isNearLeft && isNearTop)) return 'nw-resize';
-    if ((isNearLeft && isNearBottom) || (isNearRight && isNearTop)) return 'ne-resize';
-    
-    return 'move';
+    purchaseStickerPack(packId, currentUser.id);
+    updateUserPoints(-pack.price);
+    toast.success(`${pack.name} pack purchased! 🛍️✨`);
   };
-
+  
   return (
-    <div className="min-h-screen bg-gradient-to-br from-dark via-secondary/10 to-dark paper-texture relative overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-dark via-purple-900/20 to-dark relative overflow-hidden">
       {/* Artistic Background */}
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute top-16 left-12 text-3xl opacity-15 animate-float">🎨</div>
         <div className="absolute top-32 right-20 text-2xl opacity-20 animate-bounce-slow">✨</div>
         <div className="absolute bottom-32 left-16 text-4xl opacity-10 animate-wiggle">🖌️</div>
-        <div className="absolute bottom-16 right-12 text-2xl opacity-15 animate-pulse">🎭</div>
+        <div className="absolute bottom-16 right-12 text-2xl opacity-15 animate-pulse">🌟</div>
+        
+        {/* Floating art elements */}
+        <div className="absolute top-1/3 left-1/4 w-24 h-24 bg-primary/5 rounded-full blur-xl animate-pulse" />
+        <div className="absolute bottom-1/4 right-1/3 w-20 h-20 bg-secondary/5 rounded-full blur-lg animate-float" />
       </div>
 
       <div className="relative z-10 p-4 pb-20">
@@ -560,7 +402,7 @@ export const StickersView = () => {
               animate={{ scale: 1, rotate: 0 }}
               className="inline-block bg-gradient-to-r from-secondary via-primary to-purple text-white px-6 py-3 rounded-full shadow-doodle sketch-border sticker-element"
             >
-              <h1 className="text-xl font-bold font-sketch">🎨 STICKER LAB 🎨</h1>
+              <h2 className="text-xl font-bold font-sketch">🎨 STICKER LAB 🎨</h2>
               <div className="absolute -top-1 -right-1 text-sm opacity-70 animate-bounce-doodle">✨</div>
             </motion.div>
           </div>
@@ -568,8 +410,8 @@ export const StickersView = () => {
           {/* Tab Navigation */}
           <div className="flex bg-dark-card rounded-xl p-1 mb-6 max-w-md mx-auto">
             {[
-              { id: 'create', label: 'Create', icon: Palette },
-              { id: 'browse', label: 'Browse', icon: Grid },
+              { id: 'gallery', label: 'Gallery', icon: Grid },
+              { id: 'create', label: 'Create', icon: Plus },
               { id: 'packs', label: 'Packs', icon: ShoppingCart },
             ].map((tab) => {
               const Icon = tab.icon;
@@ -577,9 +419,9 @@ export const StickersView = () => {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as any)}
-                  className={`flex-1 flex items-center justify-center space-x-2 py-2 rounded-lg transition-all ${
+                  className={`flex-1 flex items-center justify-center space-x-2 py-3 rounded-lg transition-all ${
                     activeTab === tab.id
-                      ? 'bg-secondary text-white'
+                      ? 'bg-primary text-white'
                       : 'text-gray-400 hover:text-white'
                   }`}
                 >
@@ -591,622 +433,170 @@ export const StickersView = () => {
           </div>
 
           <AnimatePresence mode="wait">
+            {/* Gallery Tab */}
+            {activeTab === 'gallery' && (
+              <motion.div
+                key="gallery"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-6"
+              >
+                {/* Search and Filters */}
+                <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
+                  <div className="flex flex-col md:flex-row gap-4">
+                    {/* Search */}
+                    <div className="flex-1 relative">
+                      <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Search stickers..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 bg-dark-light text-white rounded-lg border border-gray-700 focus:border-primary focus:outline-none"
+                      />
+                    </div>
+                    
+                    {/* Category Filter */}
+                    <select
+                      value={selectedCategory}
+                      onChange={(e) => setSelectedCategory(e.target.value)}
+                      className="bg-dark-light text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-primary focus:outline-none"
+                    >
+                      {categories.map(cat => (
+                        <option key={cat} value={cat}>
+                          {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                        </option>
+                      ))}
+                    </select>
+                    
+                    {/* View Mode */}
+                    <div className="flex bg-dark-light rounded-lg p-1">
+                      <button
+                        onClick={() => setViewMode('grid')}
+                        className={`p-2 rounded ${viewMode === 'grid' ? 'bg-primary text-white' : 'text-gray-400'}`}
+                      >
+                        <Grid size={16} />
+                      </button>
+                      <button
+                        onClick={() => setViewMode('list')}
+                        className={`p-2 rounded ${viewMode === 'list' ? 'bg-primary text-white' : 'text-gray-400'}`}
+                      >
+                        <Eye size={16} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Quick Create Button */}
+                <motion.button
+                  onClick={() => setShowCreateModal(true)}
+                  className="w-full bg-gradient-to-r from-primary to-purple text-white rounded-2xl p-6 shadow-glow relative overflow-hidden"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-primary/20 to-purple/20 animate-pulse" />
+                  <div className="relative flex items-center justify-center space-x-3">
+                    <Plus size={24} />
+                    <span className="text-lg font-bold">Create New Sticker</span>
+                    <Sparkles size={24} />
+                  </div>
+                </motion.button>
+
+                {/* Stickers Grid */}
+                <div className={`grid gap-4 ${
+                  viewMode === 'grid' 
+                    ? 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5' 
+                    : 'grid-cols-1'
+                }`}>
+                  {filteredStickers.map((sticker, index) => (
+                    <motion.div
+                      key={sticker.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      className="bg-dark-card rounded-xl border border-gray-800 overflow-hidden hover:border-primary/50 transition-all group"
+                    >
+                      <div className="aspect-square bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center p-4">
+                        <img
+                          src={sticker.imageUrl}
+                          alt={sticker.name}
+                          className="max-w-full max-h-full object-contain"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = `data:image/svg+xml;base64,${btoa(`
+                              <svg width="100" height="100" xmlns="http://www.w3.org/2000/svg">
+                                <rect width="100" height="100" fill="#374151"/>
+                                <text x="50" y="50" text-anchor="middle" font-size="32" fill="#9CA3AF">🎨</text>
+                              </svg>
+                            `)}`;
+                          }}
+                        />
+                      </div>
+                      
+                      <div className="p-3">
+                        <h3 className="text-white font-semibold text-sm mb-1 truncate">{sticker.name}</h3>
+                        <div className="flex items-center justify-between text-xs text-gray-400">
+                          <span>Used {sticker.usageCount} times</span>
+                          <div className="flex space-x-1">
+                            <button className="p-1 hover:text-white transition-colors">
+                              <Download size={12} />
+                            </button>
+                            <button className="p-1 hover:text-white transition-colors">
+                              <Share2 size={12} />
+                            </button>
+                          </div>
+                        </div>
+                        
+                        {/* Tags */}
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {sticker.tags.slice(0, 3).map(tag => (
+                            <span
+                              key={tag}
+                              className="px-2 py-1 bg-primary/20 text-primary rounded-full text-xs"
+                            >
+                              #{tag}
+                            </span>
+                          ))}
+                          {sticker.tags.length > 3 && (
+                            <span className="text-xs text-gray-400">+{sticker.tags.length - 3}</span>
+                          )}
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+
+                {filteredStickers.length === 0 && (
+                  <div className="text-center py-12 text-gray-400">
+                    <Palette size={48} className="mx-auto mb-4 opacity-50" />
+                    <p className="text-lg mb-2">No stickers found</p>
+                    <p className="text-sm">Create your first sticker or adjust your filters!</p>
+                  </div>
+                )}
+              </motion.div>
+            )}
+
             {/* Create Tab */}
             {activeTab === 'create' && (
               <motion.div
                 key="create"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                className="grid grid-cols-1 lg:grid-cols-4 gap-6"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="text-center py-12"
               >
-                {/* Tools Panel */}
-                <div className="lg:col-span-1 space-y-4">
-                  {/* Tool Selection */}
-                  <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
-                    <h3 className="text-white font-bold mb-3 font-sketch">🛠️ Tools</h3>
-                    <div className="grid grid-cols-2 gap-2">
-                      {[
-                        { id: 'select', icon: MousePointer, label: 'Select' },
-                        { id: 'text', icon: Type, label: 'Text' },
-                        { id: 'emoji', icon: Smile, label: 'Emoji' },
-                        { id: 'image', icon: ImageIcon, label: 'Image' },
-                      ].map((tool) => {
-                        const Icon = tool.icon;
-                        return (
-                          <button
-                            key={tool.id}
-                            onClick={() => setSelectedTool(tool.id as any)}
-                            className={`p-3 rounded-lg border-2 transition-all doodle-btn ${
-                              selectedTool === tool.id
-                                ? 'border-secondary bg-secondary/20 text-secondary'
-                                : 'border-gray-700 bg-dark-light text-gray-400 hover:text-white hover:border-gray-600'
-                            }`}
-                          >
-                            <Icon size={20} className="mx-auto mb-1" />
-                            <div className="text-xs font-hand">{tool.label}</div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Tool Options */}
-                  <AnimatePresence mode="wait">
-                    {selectedTool === 'text' && (
-                      <motion.div
-                        key="text-options"
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="bg-dark-card rounded-xl p-4 border border-gray-800"
-                      >
-                        <h4 className="text-white font-bold mb-3 font-sketch">📝 Text Options</h4>
-                        <div className="space-y-3">
-                          <input
-                            type="text"
-                            value={textInput}
-                            onChange={(e) => setTextInput(e.target.value)}
-                            placeholder="Enter text..."
-                            className="w-full bg-dark-light text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-secondary focus:outline-none font-hand"
-                          />
-                          
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="block text-xs text-gray-400 mb-1">Size</label>
-                              <input
-                                type="range"
-                                min="12"
-                                max="72"
-                                value={textStyle.fontSize}
-                                onChange={(e) => setTextStyle(prev => ({ ...prev, fontSize: parseInt(e.target.value) }))}
-                                className="w-full"
-                              />
-                              <div className="text-xs text-gray-400 text-center">{textStyle.fontSize}px</div>
-                            </div>
-                            
-                            <div>
-                              <label className="block text-xs text-gray-400 mb-1">Color</label>
-                              <input
-                                type="color"
-                                value={textStyle.color}
-                                onChange={(e) => setTextStyle(prev => ({ ...prev, color: e.target.value }))}
-                                className="w-full h-8 rounded border border-gray-700"
-                              />
-                            </div>
-                          </div>
-                          
-                          <select
-                            value={textStyle.fontFamily}
-                            onChange={(e) => setTextStyle(prev => ({ ...prev, fontFamily: e.target.value }))}
-                            className="w-full bg-dark-light text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-secondary focus:outline-none text-sm"
-                          >
-                            {fontFamilies.map(font => (
-                              <option key={font} value={font}>{font}</option>
-                            ))}
-                          </select>
-                          
-                          <button
-                            onClick={addTextElement}
-                            disabled={!textInput.trim()}
-                            className="w-full bg-secondary text-white rounded-lg py-2 font-bold disabled:opacity-50 disabled:cursor-not-allowed doodle-btn"
-                          >
-                            Add Text
-                          </button>
-                        </div>
-                      </motion.div>
-                    )}
-
-                    {selectedTool === 'emoji' && (
-                      <motion.div
-                        key="emoji-options"
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="bg-dark-card rounded-xl p-4 border border-gray-800"
-                      >
-                        <h4 className="text-white font-bold mb-3 font-sketch">😀 Emoji Picker</h4>
-                        <div className="space-y-3 max-h-64 overflow-y-auto">
-                          {Object.entries(emojiCategories).map(([category, emojis]) => (
-                            <div key={category}>
-                              <h5 className="text-xs text-gray-400 font-hand mb-2">{category}</h5>
-                              <div className="grid grid-cols-6 gap-1">
-                                {emojis.map((emoji) => (
-                                  <button
-                                    key={emoji}
-                                    onClick={() => addEmojiElement(emoji)}
-                                    className="p-2 text-xl hover:bg-gray-700 rounded-lg transition-colors doodle-btn"
-                                  >
-                                    {emoji}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </motion.div>
-                    )}
-
-                    {selectedTool === 'image' && (
-                      <motion.div
-                        key="image-options"
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="bg-dark-card rounded-xl p-4 border border-gray-800"
-                      >
-                        <h4 className="text-white font-bold mb-3 font-sketch">🖼️ Image Upload</h4>
-                        
-                        <div
-                          className={`border-2 border-dashed rounded-lg p-6 text-center transition-all ${
-                            dragOver 
-                              ? 'border-secondary bg-secondary/10' 
-                              : 'border-gray-600 hover:border-gray-500'
-                          }`}
-                          onDrop={handleDrop}
-                          onDragOver={handleDragOver}
-                          onDragLeave={handleDragLeave}
-                        >
-                          <ImageIcon size={32} className="mx-auto text-gray-400 mb-2" />
-                          <p className="text-gray-400 text-sm mb-3 font-hand">
-                            Drag & drop an image or click to upload
-                          </p>
-                          <button
-                            onClick={() => fileInputRef.current?.click()}
-                            className="px-4 py-2 bg-secondary text-white rounded-lg font-semibold hover:bg-secondary/90 transition-colors doodle-btn"
-                          >
-                            Choose File
-                          </button>
-                          <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept="image/*"
-                            onChange={handleFileChange}
-                            className="hidden"
-                          />
-                        </div>
-                        
-                        <p className="text-xs text-gray-500 mt-2 font-hand">
-                          Supported: JPG, PNG, GIF (max 5MB)
-                        </p>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  {/* Canvas Controls */}
-                  <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
-                    <h4 className="text-white font-bold mb-3 font-sketch">⚙️ Canvas</h4>
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-400 text-sm font-hand">Grid</span>
-                        <button
-                          onClick={() => setShowGrid(!showGrid)}
-                          className={`p-1 rounded transition-colors ${
-                            showGrid ? 'text-secondary' : 'text-gray-400'
-                          }`}
-                        >
-                          {showGrid ? <Eye size={16} /> : <EyeOff size={16} />}
-                        </button>
-                      </div>
-                      
-                      <div>
-                        <label className="block text-xs text-gray-400 mb-1">Zoom</label>
-                        <input
-                          type="range"
-                          min="0.5"
-                          max="2"
-                          step="0.1"
-                          value={zoom}
-                          onChange={(e) => setZoom(parseFloat(e.target.value))}
-                          className="w-full"
-                        />
-                        <div className="text-xs text-gray-400 text-center">{Math.round(zoom * 100)}%</div>
-                      </div>
-                      
-                      <button
-                        onClick={clearCanvas}
-                        className="w-full bg-red-500/20 text-red-400 rounded-lg py-2 font-semibold hover:bg-red-500/30 transition-colors doodle-btn"
-                      >
-                        Clear Canvas
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Canvas Area */}
-                <div className="lg:col-span-2">
-                  <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-white font-bold font-sketch">🎨 Canvas</h3>
-                      <div className="text-sm text-gray-400 font-hand">
-                        {canvasSize.width} × {canvasSize.height}px
-                      </div>
-                    </div>
-                    
-                    <div className="flex justify-center">
-                      <div
-                        ref={canvasRef}
-                        className="relative bg-white rounded-lg border-2 border-gray-300 overflow-hidden select-none"
-                        style={{
-                          width: canvasSize.width * zoom,
-                          height: canvasSize.height * zoom,
-                          backgroundImage: showGrid 
-                            ? 'radial-gradient(circle, #ddd 1px, transparent 1px)'
-                            : 'none',
-                          backgroundSize: showGrid ? `${20 * zoom}px ${20 * zoom}px` : 'auto'
-                        }}
-                        onClick={() => setSelectedElement(null)}
-                      >
-                        {/* Render elements */}
-                        {elements
-                          .sort((a, b) => a.layer - b.layer)
-                          .map((element) => (
-                            <div
-                              key={element.id}
-                              className={`absolute transition-all user-select-none ${
-                                selectedElement === element.id 
-                                  ? 'ring-2 ring-secondary ring-offset-2 ring-offset-white' 
-                                  : 'hover:ring-1 hover:ring-gray-400'
-                              }`}
-                              style={{
-                                left: element.x * zoom,
-                                top: element.y * zoom,
-                                width: element.width * zoom,
-                                height: element.height * zoom,
-                                transform: `rotate(${element.rotation}deg) scaleX(${element.flipX ? -1 : 1}) scaleY(${element.flipY ? -1 : 1})`,
-                                zIndex: element.layer,
-                                cursor: isDragging || isResizing ? 'grabbing' : 'grab'
-                              }}
-                              onMouseDown={(e) => handleMouseDown(e, element.id)}
-                            >
-                              {element.type === 'text' && (
-                                <div
-                                  className="w-full h-full flex items-center justify-center text-center break-words pointer-events-none"
-                                  style={{
-                                    fontSize: (element.style?.fontSize || 24) * zoom,
-                                    color: element.style?.color || '#000000',
-                                    fontFamily: element.style?.fontFamily || 'Arial',
-                                    fontWeight: element.style?.fontWeight || 'normal'
-                                  }}
-                                >
-                                  {element.content}
-                                </div>
-                              )}
-                              
-                              {element.type === 'emoji' && (
-                                <div
-                                  className="w-full h-full flex items-center justify-center pointer-events-none"
-                                  style={{
-                                    fontSize: (element.style?.fontSize || 32) * zoom
-                                  }}
-                                >
-                                  {element.content}
-                                </div>
-                              )}
-                              
-                              {element.type === 'image' && element.imageData && (
-                                <img
-                                  src={element.imageData}
-                                  alt={element.content}
-                                  className="w-full h-full object-cover pointer-events-none"
-                                  draggable={false}
-                                />
-                              )}
-
-                              {/* Resize handles for selected element */}
-                              {selectedElement === element.id && (
-                                <>
-                                  {/* Corner resize handles */}
-                                  <div className="absolute -top-1 -left-1 w-3 h-3 bg-secondary border border-white rounded-full cursor-nw-resize" />
-                                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-secondary border border-white rounded-full cursor-ne-resize" />
-                                  <div className="absolute -bottom-1 -left-1 w-3 h-3 bg-secondary border border-white rounded-full cursor-sw-resize" />
-                                  <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-secondary border border-white rounded-full cursor-se-resize" />
-                                </>
-                              )}
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-                    
-                    {/* Canvas Instructions */}
-                    <div className="mt-4 text-center">
-                      <p className="text-xs text-gray-400 font-hand">
-                        💡 <strong>Drag</strong> to move • <strong>Corner handles</strong> to resize • <strong>Click outside</strong> to deselect
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Properties Panel */}
-                <div className="lg:col-span-1 space-y-4">
-                  {/* Element Properties */}
-                  {selectedElementData && (
-                    <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
-                      <div className="flex items-center justify-between mb-3">
-                        <h4 className="text-white font-bold font-sketch">🎛️ Properties</h4>
-                        <button
-                          onClick={() => deleteElement(selectedElementData.id)}
-                          className="p-1 text-red-400 hover:text-red-300 transition-colors"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                      
-                      <div className="space-y-3">
-                        {/* Position */}
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="block text-xs text-gray-400 mb-1">X</label>
-                            <input
-                              type="number"
-                              value={Math.round(selectedElementData.x)}
-                              onChange={(e) => updateElement(selectedElementData.id, { x: parseInt(e.target.value) || 0 })}
-                              className="w-full bg-dark-light text-white rounded px-2 py-1 text-sm border border-gray-700 focus:border-secondary focus:outline-none"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-400 mb-1">Y</label>
-                            <input
-                              type="number"
-                              value={Math.round(selectedElementData.y)}
-                              onChange={(e) => updateElement(selectedElementData.id, { y: parseInt(e.target.value) || 0 })}
-                              className="w-full bg-dark-light text-white rounded px-2 py-1 text-sm border border-gray-700 focus:border-secondary focus:outline-none"
-                            />
-                          </div>
-                        </div>
-                        
-                        {/* Size */}
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="block text-xs text-gray-400 mb-1">Width</label>
-                            <input
-                              type="number"
-                              value={Math.round(selectedElementData.width)}
-                              onChange={(e) => updateElement(selectedElementData.id, { width: parseInt(e.target.value) || 1 })}
-                              className="w-full bg-dark-light text-white rounded px-2 py-1 text-sm border border-gray-700 focus:border-secondary focus:outline-none"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-400 mb-1">Height</label>
-                            <input
-                              type="number"
-                              value={Math.round(selectedElementData.height)}
-                              onChange={(e) => updateElement(selectedElementData.id, { height: parseInt(e.target.value) || 1 })}
-                              className="w-full bg-dark-light text-white rounded px-2 py-1 text-sm border border-gray-700 focus:border-secondary focus:outline-none"
-                            />
-                          </div>
-                        </div>
-                        
-                        {/* Rotation */}
-                        <div>
-                          <label className="block text-xs text-gray-400 mb-1">Rotation</label>
-                          <input
-                            type="range"
-                            min="-180"
-                            max="180"
-                            value={selectedElementData.rotation}
-                            onChange={(e) => updateElement(selectedElementData.id, { rotation: parseInt(e.target.value) })}
-                            className="w-full"
-                          />
-                          <div className="text-xs text-gray-400 text-center">{selectedElementData.rotation}°</div>
-                        </div>
-                        
-                        {/* Transform buttons */}
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            onClick={() => updateElement(selectedElementData.id, { flipX: !selectedElementData.flipX })}
-                            className={`p-2 rounded border transition-all ${
-                              selectedElementData.flipX 
-                                ? 'border-secondary text-secondary' 
-                                : 'border-gray-700 text-gray-400 hover:text-white'
-                            }`}
-                          >
-                            <FlipHorizontal size={16} className="mx-auto" />
-                          </button>
-                          <button
-                            onClick={() => updateElement(selectedElementData.id, { flipY: !selectedElementData.flipY })}
-                            className={`p-2 rounded border transition-all ${
-                              selectedElementData.flipY 
-                                ? 'border-secondary text-secondary' 
-                                : 'border-gray-700 text-gray-400 hover:text-white'
-                            }`}
-                          >
-                            <FlipVertical size={16} className="mx-auto" />
-                          </button>
-                        </div>
-                        
-                        {/* Layer controls */}
-                        <div>
-                          <label className="block text-xs text-gray-400 mb-2">Layer {selectedElementData.layer}</label>
-                          <div className="flex space-x-2">
-                            <button
-                              onClick={() => moveLayer(selectedElementData.id, 'up')}
-                              className="flex-1 p-2 bg-dark-light text-gray-400 rounded hover:text-white transition-colors"
-                            >
-                              <ChevronUp size={16} className="mx-auto" />
-                            </button>
-                            <button
-                              onClick={() => moveLayer(selectedElementData.id, 'down')}
-                              className="flex-1 p-2 bg-dark-light text-gray-400 rounded hover:text-white transition-colors"
-                            >
-                              <ChevronDown size={16} className="mx-auto" />
-                            </button>
-                          </div>
-                        </div>
-                        
-                        {/* Text-specific properties */}
-                        {selectedElementData.type === 'text' && (
-                          <>
-                            <div>
-                              <label className="block text-xs text-gray-400 mb-1">Font Size</label>
-                              <input
-                                type="range"
-                                min="8"
-                                max="72"
-                                value={selectedElementData.style?.fontSize || 24}
-                                onChange={(e) => updateElement(selectedElementData.id, {
-                                  style: { ...selectedElementData.style, fontSize: parseInt(e.target.value) }
-                                })}
-                                className="w-full"
-                              />
-                              <div className="text-xs text-gray-400 text-center">{selectedElementData.style?.fontSize || 24}px</div>
-                            </div>
-                            
-                            <div>
-                              <label className="block text-xs text-gray-400 mb-1">Color</label>
-                              <input
-                                type="color"
-                                value={selectedElementData.style?.color || '#FFFFFF'}
-                                onChange={(e) => updateElement(selectedElementData.id, {
-                                  style: { ...selectedElementData.style, color: e.target.value }
-                                })}
-                                className="w-full h-8 rounded border border-gray-700"
-                              />
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Layers Panel */}
-                  <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
-                    <h4 className="text-white font-bold mb-3 font-sketch">📚 Layers</h4>
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
-                      {elements
-                        .sort((a, b) => b.layer - a.layer)
-                        .map((element) => (
-                          <div
-                            key={element.id}
-                            className={`p-2 rounded border cursor-pointer transition-all ${
-                              selectedElement === element.id
-                                ? 'border-secondary bg-secondary/20'
-                                : 'border-gray-700 hover:border-gray-600'
-                            }`}
-                            onClick={() => setSelectedElement(element.id)}
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center space-x-2">
-                                <div className="text-sm">
-                                  {element.type === 'text' && '📝'}
-                                  {element.type === 'emoji' && element.content}
-                                  {element.type === 'image' && '🖼️'}
-                                </div>
-                                <span className="text-xs text-gray-400 font-hand">
-                                  {element.type === 'text' ? element.content.slice(0, 10) + (element.content.length > 10 ? '...' : '') : element.type}
-                                </span>
-                              </div>
-                              <span className="text-xs text-gray-500">L{element.layer}</span>
-                            </div>
-                          </div>
-                        ))}
-                      
-                      {elements.length === 0 && (
-                        <div className="text-center py-4 text-gray-400">
-                          <Layers size={24} className="mx-auto mb-2 opacity-50" />
-                          <p className="text-xs font-hand">No elements yet</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Save Panel */}
-                  <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
-                    <h4 className="text-white font-bold mb-3 font-sketch">💾 Save Sticker</h4>
-                    <div className="space-y-3">
-                      <input
-                        type="text"
-                        value={stickerName}
-                        onChange={(e) => setStickerName(e.target.value)}
-                        placeholder="Sticker name..."
-                        className="w-full bg-dark-light text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-secondary focus:outline-none font-hand"
-                      />
-                      
-                      <div>
-                        <label className="block text-xs text-gray-400 mb-2">Tags</label>
-                        <div className="flex flex-wrap gap-1">
-                          {commonTags.map((tag) => (
-                            <button
-                              key={tag}
-                              onClick={() => toggleTag(tag)}
-                              className={`px-2 py-1 rounded text-xs transition-all ${
-                                stickerTags.includes(tag)
-                                  ? 'bg-secondary text-white'
-                                  : 'bg-gray-700 text-gray-400 hover:text-white'
-                              }`}
-                            >
-                              #{tag}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      
-                      <button
-                        onClick={saveSticker}
-                        disabled={!stickerName.trim() || elements.length === 0}
-                        className="w-full bg-gradient-to-r from-secondary to-primary text-white rounded-lg py-3 font-bold disabled:opacity-50 disabled:cursor-not-allowed doodle-btn"
-                      >
-                        <div className="flex items-center justify-center space-x-2">
-                          <Save size={16} />
-                          <span>Save Sticker</span>
-                        </div>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {/* Browse Tab */}
-            {activeTab === 'browse' && (
-              <motion.div
-                key="browse"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                className="space-y-4"
-              >
-                {/* My Stickers */}
-                <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
-                  <h3 className="text-white font-bold mb-4 font-sketch">🎨 My Stickers</h3>
-                  
-                  {stickers.length === 0 ? (
-                    <div className="text-center py-8 text-gray-400">
-                      <Palette size={48} className="mx-auto mb-4 opacity-50" />
-                      <p className="font-hand">No stickers created yet. Start creating! 🎨</p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                      {stickers.map((sticker) => (
-                        <motion.div
-                          key={sticker.id}
-                          initial={{ opacity: 0, scale: 0.9 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          className="bg-dark-light rounded-lg p-3 border border-gray-700 hover:border-secondary transition-all group"
-                        >
-                          <div className="aspect-square bg-white rounded-lg mb-2 overflow-hidden">
-                            <img
-                              src={sticker.imageUrl}
-                              alt={sticker.name}
-                              className="w-full h-full object-cover"
-                            />
-                          </div>
-                          <h4 className="text-white text-sm font-semibold truncate font-hand">{sticker.name}</h4>
-                          <div className="flex items-center justify-between mt-2">
-                            <div className="flex space-x-1">
-                              {sticker.tags.slice(0, 2).map((tag) => (
-                                <span key={tag} className="text-xs bg-gray-700 text-gray-300 px-1 rounded">
-                                  #{tag}
-                                </span>
-                              ))}
-                            </div>
-                            <span className="text-xs text-gray-400">{sticker.usageCount} uses</span>
-                          </div>
-                        </motion.div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <div className="text-6xl mb-4 animate-bounce-doodle">🎨</div>
+                <h3 className="text-white font-bold text-xl mb-2">Advanced Sticker Creator</h3>
+                <p className="text-gray-400 mb-6">Use our powerful editor to create amazing stickers!</p>
+                
+                <motion.button
+                  onClick={() => setShowCreateModal(true)}
+                  className="bg-gradient-to-r from-primary to-purple text-white rounded-xl px-8 py-4 font-bold text-lg"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  Open Creator Studio
+                </motion.button>
               </motion.div>
             )}
 
@@ -1214,70 +604,696 @@ export const StickersView = () => {
             {activeTab === 'packs' && (
               <motion.div
                 key="packs"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                className="space-y-4"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-6"
               >
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {stickerPacks.map((pack) => (
-                    <motion.div
-                      key={pack.id}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="bg-dark-card rounded-xl p-4 border border-gray-800"
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <h3 className="text-white font-bold font-sketch">{pack.name}</h3>
-                        {pack.owned ? (
-                          <div className="text-green-400 text-sm font-hand">✓ Owned</div>
-                        ) : (
-                          <div className="flex items-center space-x-1 text-accent">
-                            <Crown size={14} />
-                            <span className="text-sm font-bold">{pack.price}</span>
+                {/* Owned Packs */}
+                <div>
+                  <h3 className="text-white font-bold text-lg mb-4 flex items-center space-x-2">
+                    <Crown size={20} className="text-accent" />
+                    <span>Your Packs</span>
+                  </h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {ownedPacks.map(pack => (
+                      <div key={pack.id} className="bg-dark-card rounded-xl p-4 border border-gray-800">
+                        <div className="flex items-center space-x-3 mb-3">
+                          <div className="text-2xl">
+                            {pack.category === 'custom' ? '🎨' : 
+                             pack.category === 'roast' ? '🔥' : 
+                             pack.category === 'wholesome' ? '💖' : '😂'}
                           </div>
-                        )}
+                          <div>
+                            <h4 className="text-white font-semibold">{pack.name}</h4>
+                            <p className="text-gray-400 text-sm">{pack.count} stickers</p>
+                          </div>
+                        </div>
+                        <p className="text-gray-300 text-sm mb-3">{pack.description}</p>
+                        <div className="flex items-center justify-between">
+                          <span className="text-accent font-bold">Owned</span>
+                          <button className="text-primary hover:text-white transition-colors">
+                            <Eye size={16} />
+                          </button>
+                        </div>
                       </div>
-                      
-                      <p className="text-gray-400 text-sm mb-3 font-hand">{pack.description}</p>
-                      
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-gray-400 text-sm font-hand">{pack.count} stickers</span>
-                        <span className={`px-2 py-1 rounded text-xs ${
-                          pack.category === 'roast' ? 'bg-red-500/20 text-red-400' :
-                          pack.category === 'wholesome' ? 'bg-green-500/20 text-green-400' :
-                          pack.category === 'cursed' ? 'bg-purple-500/20 text-purple-400' :
-                          pack.category === 'meme' ? 'bg-yellow-500/20 text-yellow-400' :
-                          'bg-blue-500/20 text-blue-400'
-                        }`}>
-                          {pack.category}
-                        </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Available Packs */}
+                <div>
+                  <h3 className="text-white font-bold text-lg mb-4 flex items-center space-x-2">
+                    <ShoppingCart size={20} className="text-secondary" />
+                    <span>Available Packs</span>
+                  </h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {availablePacks.map(pack => (
+                      <div key={pack.id} className="bg-dark-card rounded-xl p-4 border border-gray-800">
+                        <div className="flex items-center space-x-3 mb-3">
+                          <div className="text-2xl">
+                            {pack.category === 'roast' ? '🔥' : 
+                             pack.category === 'wholesome' ? '💖' : 
+                             pack.category === 'meme' ? '😂' : '🎨'}
+                          </div>
+                          <div>
+                            <h4 className="text-white font-semibold">{pack.name}</h4>
+                            <p className="text-gray-400 text-sm">{pack.count} stickers</p>
+                          </div>
+                        </div>
+                        <p className="text-gray-300 text-sm mb-3">{pack.description}</p>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-1 text-accent">
+                            <Crown size={16} />
+                            <span className="font-bold">{pack.price} CP</span>
+                          </div>
+                          <button
+                            onClick={() => handlePurchasePack(pack.id)}
+                            disabled={!currentUser || currentUser.clownPoints < pack.price}
+                            className="bg-primary text-white px-3 py-1 rounded-lg text-sm hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Buy Pack
+                          </button>
+                        </div>
                       </div>
-                      
-                      {!pack.owned && (
-                        <button
-                          onClick={() => {
-                            if (currentUser && currentUser.clownPoints >= pack.price) {
-                              purchaseStickerPack(pack.id, currentUser.id);
-                              toast.success(`${pack.name} purchased! 🎉`);
-                            } else {
-                              toast.error('Not enough ClownPoints! 💰');
-                            }
-                          }}
-                          disabled={!currentUser || currentUser.clownPoints < pack.price}
-                          className="w-full bg-accent text-dark rounded-lg py-2 font-bold disabled:opacity-50 disabled:cursor-not-allowed doodle-btn"
-                        >
-                          Purchase Pack
-                        </button>
-                      )}
-                    </motion.div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </motion.div>
             )}
           </AnimatePresence>
         </div>
       </div>
+
+      {/* Enhanced Creator Modal */}
+      <AnimatePresence>
+        {showCreateModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"
+            onClick={() => setShowCreateModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-dark-card rounded-2xl w-full max-w-7xl h-[90vh] flex flex-col overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Creator Header */}
+              <div className="flex items-center justify-between p-4 border-b border-gray-700">
+                <div className="flex items-center space-x-3">
+                  <Palette size={24} className="text-primary" />
+                  <h2 className="text-xl font-bold text-white">Sticker Creator Studio</h2>
+                </div>
+                
+                <div className="flex items-center space-x-2">
+                  {/* Undo/Redo */}
+                  <button
+                    onClick={undo}
+                    disabled={historyIndex <= 0}
+                    className="p-2 text-gray-400 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Undo size={16} />
+                  </button>
+                  <button
+                    onClick={redo}
+                    disabled={historyIndex >= history.length - 1}
+                    className="p-2 text-gray-400 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Redo size={16} />
+                  </button>
+                  
+                  <div className="w-px h-6 bg-gray-700" />
+                  
+                  {/* Save */}
+                  <button
+                    onClick={handleSaveSticker}
+                    className="bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors flex items-center space-x-2"
+                  >
+                    <Save size={16} />
+                    <span>Save</span>
+                  </button>
+                  
+                  {/* Close */}
+                  <button
+                    onClick={() => setShowCreateModal(false)}
+                    className="p-2 text-gray-400 hover:text-white"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-1 overflow-hidden">
+                {/* Left Toolbar */}
+                <div className="w-64 bg-dark-light border-r border-gray-700 overflow-y-auto">
+                  <div className="p-4 space-y-4">
+                    {/* Tools */}
+                    <div>
+                      <h3 className="text-white font-semibold mb-3">Tools</h3>
+                      <div className="grid grid-cols-2 gap-2">
+                        {[
+                          { id: 'select', icon: MousePointer, label: 'Select' },
+                          { id: 'text', icon: Type, label: 'Text' },
+                          { id: 'emoji', icon: Smile, label: 'Emoji' },
+                          { id: 'shape', icon: Square, label: 'Shape' },
+                          { id: 'image', icon: Image, label: 'Image' },
+                        ].map(toolItem => (
+                          <button
+                            key={toolItem.id}
+                            onClick={() => setTool(toolItem.id as any)}
+                            className={`p-3 rounded-lg border transition-all ${
+                              tool === toolItem.id
+                                ? 'border-primary bg-primary/20 text-primary'
+                                : 'border-gray-700 text-gray-400 hover:text-white hover:border-gray-600'
+                            }`}
+                          >
+                            <toolItem.icon size={16} className="mx-auto mb-1" />
+                            <div className="text-xs">{toolItem.label}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Tool-specific options */}
+                    {tool === 'text' && (
+                      <div className="space-y-3">
+                        <h4 className="text-white font-medium">Text Options</h4>
+                        <input
+                          type="text"
+                          placeholder="Enter text..."
+                          value={textInput}
+                          onChange={(e) => setTextInput(e.target.value)}
+                          className="w-full bg-dark text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-primary focus:outline-none"
+                        />
+                        
+                        <div className="space-y-2">
+                          <label className="text-sm text-gray-400">Font Size</label>
+                          <input
+                            type="range"
+                            min="12"
+                            max="72"
+                            value={textStyle.fontSize}
+                            onChange={(e) => setTextStyle(prev => ({ ...prev, fontSize: parseInt(e.target.value) }))}
+                            className="w-full"
+                          />
+                          <span className="text-xs text-gray-400">{textStyle.fontSize}px</span>
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <label className="text-sm text-gray-400">Font Family</label>
+                          <select
+                            value={textStyle.fontFamily}
+                            onChange={(e) => setTextStyle(prev => ({ ...prev, fontFamily: e.target.value }))}
+                            className="w-full bg-dark text-white rounded-lg px-3 py-2 border border-gray-700"
+                          >
+                            {fontFamilies.map(font => (
+                              <option key={font} value={font}>{font}</option>
+                            ))}
+                          </select>
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <label className="text-sm text-gray-400">Color</label>
+                          <div className="grid grid-cols-4 gap-2">
+                            {colorPalettes.Vibrant.map(color => (
+                              <button
+                                key={color}
+                                onClick={() => setTextStyle(prev => ({ ...prev, color }))}
+                                className={`w-8 h-8 rounded border-2 ${
+                                  textStyle.color === color ? 'border-white' : 'border-gray-600'
+                                }`}
+                                style={{ backgroundColor: color }}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                        
+                        <button
+                          onClick={handleAddText}
+                          disabled={!textInput.trim()}
+                          className="w-full bg-primary text-white py-2 rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
+                        >
+                          Add Text
+                        </button>
+                      </div>
+                    )}
+
+                    {tool === 'emoji' && (
+                      <div className="space-y-3">
+                        <h4 className="text-white font-medium">Emoji Library</h4>
+                        {Object.entries(emojiCategories).map(([category, emojis]) => (
+                          <div key={category}>
+                            <h5 className="text-sm text-gray-400 mb-2">{category}</h5>
+                            <div className="grid grid-cols-6 gap-1">
+                              {emojis.map(emoji => (
+                                <button
+                                  key={emoji}
+                                  onClick={() => handleAddEmoji(emoji)}
+                                  className="p-2 text-lg hover:bg-gray-700 rounded transition-colors"
+                                >
+                                  {emoji}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {tool === 'shape' && (
+                      <div className="space-y-3">
+                        <h4 className="text-white font-medium">Shape Options</h4>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { id: 'rectangle', icon: Square, symbol: '■' },
+                            { id: 'circle', icon: Circle, symbol: '●' },
+                            { id: 'triangle', icon: Triangle, symbol: '▲' },
+                            { id: 'heart', icon: Heart, symbol: '♥' },
+                            { id: 'star', icon: Star, symbol: '★' },
+                          ].map(shape => (
+                            <button
+                              key={shape.id}
+                              onClick={() => setShapeType(shape.id as any)}
+                              className={`p-3 rounded-lg border transition-all ${
+                                shapeType === shape.id
+                                  ? 'border-primary bg-primary/20 text-primary'
+                                  : 'border-gray-700 text-gray-400 hover:text-white'
+                              }`}
+                            >
+                              <shape.icon size={16} className="mx-auto" />
+                            </button>
+                          ))}
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <label className="text-sm text-gray-400">Fill Color</label>
+                          <div className="grid grid-cols-4 gap-2">
+                            {colorPalettes.Vibrant.map(color => (
+                              <button
+                                key={color}
+                                onClick={() => setShapeStyle(prev => ({ ...prev, fill: color }))}
+                                className={`w-8 h-8 rounded border-2 ${
+                                  shapeStyle.fill === color ? 'border-white' : 'border-gray-600'
+                                }`}
+                                style={{ backgroundColor: color }}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                        
+                        <button
+                          onClick={handleAddShape}
+                          className="w-full bg-primary text-white py-2 rounded-lg hover:bg-primary/90 transition-colors"
+                        >
+                          Add Shape
+                        </button>
+                      </div>
+                    )}
+
+                    {tool === 'image' && (
+                      <div className="space-y-3">
+                        <h4 className="text-white font-medium">Image Upload</h4>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handleImageUpload}
+                          className="hidden"
+                        />
+                        <button
+                          onClick={() => fileInputRef.current?.click()}
+                          className="w-full bg-secondary text-white py-3 rounded-lg hover:bg-secondary/90 transition-colors flex items-center justify-center space-x-2"
+                        >
+                          <Upload size={16} />
+                          <span>Upload Image</span>
+                        </button>
+                        <p className="text-xs text-gray-400">Max 5MB • JPG, PNG, GIF</p>
+                      </div>
+                    )}
+
+                    {/* Canvas Options */}
+                    <div className="space-y-3">
+                      <h4 className="text-white font-medium">Canvas</h4>
+                      
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => setShowGrid(!showGrid)}
+                          className={`p-2 rounded ${showGrid ? 'bg-primary text-white' : 'text-gray-400'}`}
+                        >
+                          <Grid size={16} />
+                        </button>
+                        <span className="text-sm text-gray-400">Show Grid</span>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <label className="text-sm text-gray-400">Background</label>
+                        <div className="grid grid-cols-4 gap-2">
+                          <button
+                            onClick={() => setBackgroundColor('#transparent')}
+                            className={`w-8 h-8 rounded border-2 bg-gradient-to-br from-gray-300 to-gray-500 ${
+                              backgroundColor === '#transparent' ? 'border-white' : 'border-gray-600'
+                            }`}
+                          />
+                          {['#ffffff', '#000000', '#f3f4f6'].map(color => (
+                            <button
+                              key={color}
+                              onClick={() => setBackgroundColor(color)}
+                              className={`w-8 h-8 rounded border-2 ${
+                                backgroundColor === color ? 'border-white' : 'border-gray-600'
+                              }`}
+                              style={{ backgroundColor: color }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Canvas Area */}
+                <div className="flex-1 bg-gray-900 relative overflow-hidden">
+                  <div className="absolute inset-4 bg-white rounded-lg shadow-lg overflow-hidden">
+                    <div
+                      ref={canvasRef}
+                      className="relative w-full h-full"
+                      style={{
+                        backgroundColor: backgroundColor === '#transparent' ? 'transparent' : backgroundColor,
+                        backgroundImage: showGrid ? 
+                          'linear-gradient(rgba(0,0,0,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.1) 1px, transparent 1px)' : 
+                          'none',
+                        backgroundSize: showGrid ? '20px 20px' : 'auto'
+                      }}
+                    >
+                      {/* Render elements */}
+                      {elements
+                        .sort((a, b) => a.layer - b.layer)
+                        .map(element => (
+                          <div
+                            key={element.id}
+                            className={`absolute cursor-move select-none ${
+                              selectedElement === element.id ? 'ring-2 ring-primary' : ''
+                            }`}
+                            style={{
+                              left: element.x,
+                              top: element.y,
+                              width: element.width,
+                              height: element.height,
+                              transform: `rotate(${element.rotation}deg) scaleX(${element.flipX ? -1 : 1}) scaleY(${element.flipY ? -1 : 1})`,
+                              zIndex: element.layer
+                            }}
+                            onClick={() => setSelectedElement(element.id)}
+                          >
+                            {element.type === 'text' && (
+                              <div
+                                style={{
+                                  fontSize: element.style?.fontSize || 24,
+                                  color: element.style?.color || '#000000',
+                                  fontFamily: element.style?.fontFamily || 'Arial',
+                                  fontWeight: element.style?.fontWeight || 'normal',
+                                  textAlign: element.style?.textAlign as any || 'center',
+                                  width: '100%',
+                                  height: '100%',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center'
+                                }}
+                              >
+                                {element.content}
+                              </div>
+                            )}
+                            
+                            {element.type === 'emoji' && (
+                              <div
+                                style={{
+                                  fontSize: element.style?.fontSize || 32,
+                                  width: '100%',
+                                  height: '100%',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center'
+                                }}
+                              >
+                                {element.content}
+                              </div>
+                            )}
+                            
+                            {element.type === 'image' && element.imageData && (
+                              <img
+                                src={element.imageData}
+                                alt={element.content}
+                                className="w-full h-full object-contain"
+                              />
+                            )}
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                  
+                  {/* Canvas Controls */}
+                  <div className="absolute bottom-4 left-4 flex items-center space-x-2 bg-black/50 rounded-lg p-2">
+                    <button
+                      onClick={() => setZoom(Math.max(0.25, zoom - 0.25))}
+                      className="p-2 text-white hover:bg-white/20 rounded"
+                    >
+                      <ZoomOut size={16} />
+                    </button>
+                    <span className="text-white text-sm px-2">{Math.round(zoom * 100)}%</span>
+                    <button
+                      onClick={() => setZoom(Math.min(3, zoom + 0.25))}
+                      className="p-2 text-white hover:bg-white/20 rounded"
+                    >
+                      <ZoomIn size={16} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Right Properties Panel */}
+                <div className="w-64 bg-dark-light border-l border-gray-700 overflow-y-auto">
+                  <div className="p-4 space-y-4">
+                    {/* Sticker Info */}
+                    <div>
+                      <h3 className="text-white font-semibold mb-3">Sticker Info</h3>
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-sm text-gray-400 mb-1">Name</label>
+                          <input
+                            type="text"
+                            value={stickerName}
+                            onChange={(e) => setStickerName(e.target.value)}
+                            placeholder="My awesome sticker"
+                            className="w-full bg-dark text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-primary focus:outline-none"
+                          />
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm text-gray-400 mb-1">Pack</label>
+                          <select
+                            value={selectedPack}
+                            onChange={(e) => setSelectedPack(e.target.value)}
+                            className="w-full bg-dark text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-primary focus:outline-none"
+                          >
+                            {ownedPacks.map(pack => (
+                              <option key={pack.id} value={pack.id}>{pack.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm text-gray-400 mb-1">Tags</label>
+                          <div className="flex flex-wrap gap-1 mb-2">
+                            {stickerTags.map(tag => (
+                              <span
+                                key={tag}
+                                className="px-2 py-1 bg-primary/20 text-primary rounded-full text-xs flex items-center space-x-1"
+                              >
+                                <span>#{tag}</span>
+                                <button
+                                  onClick={() => setStickerTags(tags => tags.filter(t => t !== tag))}
+                                  className="hover:text-white"
+                                >
+                                  <X size={10} />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                          <input
+                            type="text"
+                            placeholder="Add tag..."
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                const value = (e.target as HTMLInputElement).value.trim();
+                                if (value && !stickerTags.includes(value)) {
+                                  setStickerTags([...stickerTags, value]);
+                                  (e.target as HTMLInputElement).value = '';
+                                }
+                              }
+                            }}
+                            className="w-full bg-dark text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-primary focus:outline-none text-sm"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Element Properties */}
+                    {selectedElement && (
+                      <div>
+                        <h3 className="text-white font-semibold mb-3">Element Properties</h3>
+                        {(() => {
+                          const element = elements.find(el => el.id === selectedElement);
+                          if (!element) return null;
+                          
+                          return (
+                            <div className="space-y-3">
+                              {/* Position */}
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-xs text-gray-400 mb-1">X</label>
+                                  <input
+                                    type="number"
+                                    value={Math.round(element.x)}
+                                    onChange={(e) => updateElement(element.id, { x: parseInt(e.target.value) || 0 })}
+                                    className="w-full bg-dark text-white rounded px-2 py-1 text-sm border border-gray-700"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-gray-400 mb-1">Y</label>
+                                  <input
+                                    type="number"
+                                    value={Math.round(element.y)}
+                                    onChange={(e) => updateElement(element.id, { y: parseInt(e.target.value) || 0 })}
+                                    className="w-full bg-dark text-white rounded px-2 py-1 text-sm border border-gray-700"
+                                  />
+                                </div>
+                              </div>
+                              
+                              {/* Size */}
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-xs text-gray-400 mb-1">Width</label>
+                                  <input
+                                    type="number"
+                                    value={Math.round(element.width)}
+                                    onChange={(e) => updateElement(element.id, { width: parseInt(e.target.value) || 1 })}
+                                    className="w-full bg-dark text-white rounded px-2 py-1 text-sm border border-gray-700"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-gray-400 mb-1">Height</label>
+                                  <input
+                                    type="number"
+                                    value={Math.round(element.height)}
+                                    onChange={(e) => updateElement(element.id, { height: parseInt(e.target.value) || 1 })}
+                                    className="w-full bg-dark text-white rounded px-2 py-1 text-sm border border-gray-700"
+                                  />
+                                </div>
+                              </div>
+                              
+                              {/* Rotation */}
+                              <div>
+                                <label className="block text-xs text-gray-400 mb-1">Rotation</label>
+                                <input
+                                  type="range"
+                                  min="-180"
+                                  max="180"
+                                  value={element.rotation}
+                                  onChange={(e) => updateElement(element.id, { rotation: parseInt(e.target.value) })}
+                                  className="w-full"
+                                />
+                                <span className="text-xs text-gray-400">{element.rotation}°</span>
+                              </div>
+                              
+                              {/* Actions */}
+                              <div className="grid grid-cols-2 gap-2">
+                                <button
+                                  onClick={() => updateElement(element.id, { flipX: !element.flipX })}
+                                  className={`p-2 rounded text-sm ${element.flipX ? 'bg-primary text-white' : 'bg-gray-700 text-gray-300'}`}
+                                >
+                                  <FlipHorizontal size={14} className="mx-auto" />
+                                </button>
+                                <button
+                                  onClick={() => updateElement(element.id, { flipY: !element.flipY })}
+                                  className={`p-2 rounded text-sm ${element.flipY ? 'bg-primary text-white' : 'bg-gray-700 text-gray-300'}`}
+                                >
+                                  <FlipVertical size={14} className="mx-auto" />
+                                </button>
+                              </div>
+                              
+                              <div className="grid grid-cols-3 gap-1">
+                                <button
+                                  onClick={() => duplicateElement(element.id)}
+                                  className="p-2 bg-gray-700 text-gray-300 rounded text-sm hover:bg-gray-600"
+                                >
+                                  <Copy size={14} className="mx-auto" />
+                                </button>
+                                <button
+                                  onClick={() => moveLayer(element.id, 'up')}
+                                  className="p-2 bg-gray-700 text-gray-300 rounded text-sm hover:bg-gray-600"
+                                >
+                                  ↑
+                                </button>
+                                <button
+                                  onClick={() => deleteElement(element.id)}
+                                  className="p-2 bg-red-500 text-white rounded text-sm hover:bg-red-600"
+                                >
+                                  <Trash2 size={14} className="mx-auto" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    {/* Layers */}
+                    <div>
+                      <h3 className="text-white font-semibold mb-3">Layers</h3>
+                      <div className="space-y-1 max-h-32 overflow-y-auto">
+                        {elements
+                          .sort((a, b) => b.layer - a.layer)
+                          .map(element => (
+                            <div
+                              key={element.id}
+                              onClick={() => setSelectedElement(element.id)}
+                              className={`p-2 rounded cursor-pointer transition-colors ${
+                                selectedElement === element.id
+                                  ? 'bg-primary/20 border border-primary'
+                                  : 'bg-gray-700 hover:bg-gray-600'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-white text-sm truncate">
+                                  {element.type === 'text' ? element.content : 
+                                   element.type === 'emoji' ? element.content :
+                                   element.type === 'image' ? element.content :
+                                   `${element.type} ${element.layer + 1}`}
+                                </span>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    deleteElement(element.id);
+                                  }}
+                                  className="text-gray-400 hover:text-red-400"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
