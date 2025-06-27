@@ -44,18 +44,13 @@ export const StickersView = () => {
   // Canvas and elements state
   const [elements, setElements] = useState<StickerElement[]>([]);
   const [selectedElement, setSelectedElement] = useState<string | null>(null);
-  const [dragData, setDragData] = useState<{
-    isDragging: boolean;
-    startX: number;
-    startY: number;
-    elementStartX: number;
-    elementStartY: number;
-  } | null>(null);
   
-  // NEW: Separate resize state
-  const [resizeData, setResizeData] = useState<{
+  // FIXED: Unified interaction state
+  const [interactionData, setInteractionData] = useState<{
+    type: 'drag' | 'resize' | null;
+    isDragging: boolean;
     isResizing: boolean;
-    handle: string;
+    handle?: string;
     startX: number;
     startY: number;
     elementStartX: number;
@@ -165,106 +160,98 @@ export const StickersView = () => {
     reader.readAsDataURL(file);
   };
 
-  // FIXED: Separate mouse handlers for drag vs resize
+  // FIXED: Unified mouse down handler that properly detects resize handles
   const handleMouseDown = useCallback((e: React.MouseEvent, elementId: string) => {
     e.preventDefault();
     e.stopPropagation();
     
-    // Don't start drag if clicking on a resize handle
+    const element = elements.find(el => el.id === elementId);
+    if (!element) return;
+
+    setSelectedElement(elementId);
+    
+    // Check if clicking on a resize handle
     const target = e.target as HTMLElement;
-    if (target.classList.contains('resize-handle')) {
-      return; // Let resize handle its own mouse down
+    const isResizeHandle = target.classList.contains('resize-handle');
+    const handle = target.getAttribute('data-handle');
+    
+    if (isResizeHandle && handle) {
+      // Start resizing
+      setInteractionData({
+        type: 'resize',
+        isDragging: false,
+        isResizing: true,
+        handle,
+        startX: e.clientX,
+        startY: e.clientY,
+        elementStartX: element.x,
+        elementStartY: element.y,
+        elementStartWidth: element.width,
+        elementStartHeight: element.height,
+      });
+    } else {
+      // Start dragging
+      setInteractionData({
+        type: 'drag',
+        isDragging: true,
+        isResizing: false,
+        startX: e.clientX,
+        startY: e.clientY,
+        elementStartX: element.x,
+        elementStartY: element.y,
+        elementStartWidth: element.width,
+        elementStartHeight: element.height,
+      });
     }
-    
-    const element = elements.find(el => el.id === elementId);
-    if (!element) return;
-
-    setSelectedElement(elementId);
-    
-    // Start dragging
-    setDragData({
-      isDragging: true,
-      startX: e.clientX,
-      startY: e.clientY,
-      elementStartX: element.x,
-      elementStartY: element.y,
-    });
   }, [elements]);
 
-  // NEW: Separate resize handle mouse down
-  const handleResizeMouseDown = useCallback((e: React.MouseEvent, elementId: string, handle: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    const element = elements.find(el => el.id === elementId);
-    if (!element) return;
-
-    setSelectedElement(elementId);
-    
-    // Start resizing
-    setResizeData({
-      isResizing: true,
-      handle,
-      startX: e.clientX,
-      startY: e.clientY,
-      elementStartX: element.x,
-      elementStartY: element.y,
-      elementStartWidth: element.width,
-      elementStartHeight: element.height,
-    });
-  }, [elements]);
-
-  // FIXED: Enhanced mouse move handler
+  // FIXED: Unified mouse move handler
   const handleMouseMove = useCallback((e: MouseEvent) => {
-    // Handle dragging
-    if (dragData?.isDragging && selectedElement) {
-      const deltaX = e.clientX - dragData.startX;
-      const deltaY = e.clientY - dragData.startY;
-      
-      const newX = Math.max(0, Math.min(300 - 50, dragData.elementStartX + deltaX));
-      const newY = Math.max(0, Math.min(300 - 50, dragData.elementStartY + deltaY));
+    if (!interactionData || !selectedElement) return;
+    
+    const deltaX = e.clientX - interactionData.startX;
+    const deltaY = e.clientY - interactionData.startY;
+    
+    if (interactionData.type === 'drag' && interactionData.isDragging) {
+      // Handle dragging
+      const newX = Math.max(0, Math.min(300 - 50, interactionData.elementStartX + deltaX));
+      const newY = Math.max(0, Math.min(300 - 50, interactionData.elementStartY + deltaY));
       
       setElements(prev => prev.map(el => 
         el.id === selectedElement 
           ? { ...el, x: newX, y: newY }
           : el
       ));
-      return;
-    }
-    
-    // Handle resizing
-    if (resizeData?.isResizing && selectedElement) {
-      const deltaX = e.clientX - resizeData.startX;
-      const deltaY = e.clientY - resizeData.startY;
-      
+    } else if (interactionData.type === 'resize' && interactionData.isResizing) {
+      // Handle resizing
       setElements(prev => prev.map(el => {
         if (el.id !== selectedElement) return el;
         
-        let newX = resizeData.elementStartX;
-        let newY = resizeData.elementStartY;
-        let newWidth = resizeData.elementStartWidth;
-        let newHeight = resizeData.elementStartHeight;
+        let newX = interactionData.elementStartX;
+        let newY = interactionData.elementStartY;
+        let newWidth = interactionData.elementStartWidth;
+        let newHeight = interactionData.elementStartHeight;
         
-        switch (resizeData.handle) {
+        switch (interactionData.handle) {
           case 'se': // Southeast (bottom-right)
-            newWidth = Math.max(20, resizeData.elementStartWidth + deltaX);
-            newHeight = Math.max(20, resizeData.elementStartHeight + deltaY);
+            newWidth = Math.max(20, interactionData.elementStartWidth + deltaX);
+            newHeight = Math.max(20, interactionData.elementStartHeight + deltaY);
             break;
           case 'sw': // Southwest (bottom-left)
-            newWidth = Math.max(20, resizeData.elementStartWidth - deltaX);
-            newHeight = Math.max(20, resizeData.elementStartHeight + deltaY);
-            newX = Math.max(0, resizeData.elementStartX + deltaX);
+            newWidth = Math.max(20, interactionData.elementStartWidth - deltaX);
+            newHeight = Math.max(20, interactionData.elementStartHeight + deltaY);
+            newX = Math.max(0, interactionData.elementStartX + deltaX);
             break;
           case 'ne': // Northeast (top-right)
-            newWidth = Math.max(20, resizeData.elementStartWidth + deltaX);
-            newHeight = Math.max(20, resizeData.elementStartHeight - deltaY);
-            newY = Math.max(0, resizeData.elementStartY + deltaY);
+            newWidth = Math.max(20, interactionData.elementStartWidth + deltaX);
+            newHeight = Math.max(20, interactionData.elementStartHeight - deltaY);
+            newY = Math.max(0, interactionData.elementStartY + deltaY);
             break;
           case 'nw': // Northwest (top-left)
-            newWidth = Math.max(20, resizeData.elementStartWidth - deltaX);
-            newHeight = Math.max(20, resizeData.elementStartHeight - deltaY);
-            newX = Math.max(0, resizeData.elementStartX + deltaX);
-            newY = Math.max(0, resizeData.elementStartY + deltaY);
+            newWidth = Math.max(20, interactionData.elementStartWidth - deltaX);
+            newHeight = Math.max(20, interactionData.elementStartHeight - deltaY);
+            newX = Math.max(0, interactionData.elementStartX + deltaX);
+            newY = Math.max(0, interactionData.elementStartY + deltaY);
             break;
         }
         
@@ -275,17 +262,16 @@ export const StickersView = () => {
         return { ...el, x: newX, y: newY, width: newWidth, height: newHeight };
       }));
     }
-  }, [dragData, resizeData, selectedElement]);
+  }, [interactionData, selectedElement]);
 
-  // FIXED: Enhanced mouse up handler
+  // FIXED: Mouse up handler
   const handleMouseUp = useCallback(() => {
-    setDragData(null);
-    setResizeData(null);
+    setInteractionData(null);
   }, []);
 
   // Mouse event listeners
   React.useEffect(() => {
-    if (dragData?.isDragging || resizeData?.isResizing) {
+    if (interactionData?.isDragging || interactionData?.isResizing) {
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
       
@@ -294,7 +280,7 @@ export const StickersView = () => {
         document.removeEventListener('mouseup', handleMouseUp);
       };
     }
-  }, [dragData, resizeData, handleMouseMove, handleMouseUp]);
+  }, [interactionData, handleMouseMove, handleMouseUp]);
 
   // Update element content
   const updateElementContent = (elementId: string, content: string) => {
@@ -606,25 +592,29 @@ export const StickersView = () => {
                             />
                           )}
                           
-                          {/* FIXED: Resize Handles - Only show for selected element */}
+                          {/* FIXED: Resize Handles with proper data attributes */}
                           {selectedElement === element.id && (
                             <>
-                              {/* Corner resize handles */}
+                              {/* Corner resize handles with data-handle attributes */}
                               <div
                                 className="resize-handle absolute -top-2 -left-2 w-4 h-4 bg-primary border-2 border-white rounded-full cursor-nw-resize shadow-lg hover:scale-110 transition-transform"
-                                onMouseDown={(e) => handleResizeMouseDown(e, element.id, 'nw')}
+                                data-handle="nw"
+                                onMouseDown={(e) => handleMouseDown(e, element.id)}
                               />
                               <div
                                 className="resize-handle absolute -top-2 -right-2 w-4 h-4 bg-primary border-2 border-white rounded-full cursor-ne-resize shadow-lg hover:scale-110 transition-transform"
-                                onMouseDown={(e) => handleResizeMouseDown(e, element.id, 'ne')}
+                                data-handle="ne"
+                                onMouseDown={(e) => handleMouseDown(e, element.id)}
                               />
                               <div
                                 className="resize-handle absolute -bottom-2 -left-2 w-4 h-4 bg-primary border-2 border-white rounded-full cursor-sw-resize shadow-lg hover:scale-110 transition-transform"
-                                onMouseDown={(e) => handleResizeMouseDown(e, element.id, 'sw')}
+                                data-handle="sw"
+                                onMouseDown={(e) => handleMouseDown(e, element.id)}
                               />
                               <div
                                 className="resize-handle absolute -bottom-2 -right-2 w-4 h-4 bg-primary border-2 border-white rounded-full cursor-se-resize shadow-lg hover:scale-110 transition-transform"
-                                onMouseDown={(e) => handleResizeMouseDown(e, element.id, 'se')}
+                                data-handle="se"
+                                onMouseDown={(e) => handleMouseDown(e, element.id)}
                               />
                             </>
                           )}
