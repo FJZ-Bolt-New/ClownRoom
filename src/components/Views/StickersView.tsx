@@ -3,35 +3,28 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '../../store/useStore';
 import { 
   Plus, 
-  Image, 
   Type, 
+  Image as ImageIcon, 
   Smile, 
-  Download, 
-  Share2, 
+  Save, 
   Trash2, 
-  RotateCcw, 
-  Save,
-  Upload,
-  Palette,
-  Move,
-  RotateCw,
-  FlipHorizontal,
-  FlipVertical,
-  Eye,
+  Download, 
+  Upload, 
+  Layers, 
+  Eye, 
   EyeOff,
   ChevronUp,
   ChevronDown,
-  Layers,
+  RotateCw,
+  FlipHorizontal,
+  FlipVertical,
+  Palette,
   Grid,
   Search,
-  Filter,
-  Star,
-  Heart,
   ShoppingCart,
   Crown,
-  X,
-  Play,
-  Pause
+  Star,
+  X
 } from 'lucide-react';
 import { Sticker, StickerElement } from '../../types';
 import toast from 'react-hot-toast';
@@ -40,257 +33,259 @@ export const StickersView = () => {
   const { 
     stickers, 
     addSticker, 
-    updateStickerUsage, 
+    updateUserPoints, 
     stickerPacks, 
-    addStickerToPack,
+    addStickerToPack, 
+    updateStickerPack,
     purchaseStickerPack,
-    updateUserPoints,
     currentUser 
   } = useStore();
-
-  // Canvas state
+  
+  // Canvas and elements state
   const [elements, setElements] = useState<StickerElement[]>([]);
   const [selectedElement, setSelectedElement] = useState<string | null>(null);
-  const [draggedElement, setDraggedElement] = useState<string | null>(null);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [isResizing, setIsResizing] = useState(false);
-  const [resizeHandle, setResizeHandle] = useState<string | null>(null);
-  const [resizeStartData, setResizeStartData] = useState<{ x: number; y: number; width: number; height: number; mouseX: number; mouseY: number } | null>(null);
-  const [currentLayer, setCurrentLayer] = useState(1);
+  const [dragData, setDragData] = useState<{
+    isDragging: boolean;
+    startX: number;
+    startY: number;
+    elementStartX: number;
+    elementStartY: number;
+  } | null>(null);
+  
+  // NEW: Separate resize state
+  const [resizeData, setResizeData] = useState<{
+    isResizing: boolean;
+    handle: string;
+    startX: number;
+    startY: number;
+    elementStartX: number;
+    elementStartY: number;
+    elementStartWidth: number;
+    elementStartHeight: number;
+  } | null>(null);
   
   // UI state
-  const [activeTab, setActiveTab] = useState<'create' | 'browse' | 'packs'>('create');
+  const [activeTab, setActiveTab] = useState<'create' | 'packs' | 'collection'>('create');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [showImageUpload, setShowImageUpload] = useState(false);
-  const [showTextInput, setShowTextInput] = useState(false);
-  const [newText, setNewText] = useState('');
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [newPackName, setNewPackName] = useState('');
+  const [selectedPackId, setSelectedPackId] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedPack, setSelectedPack] = useState<string>('all');
-  const [previewSticker, setPreviewSticker] = useState<Sticker | null>(null);
   
   // Canvas ref
   const canvasRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
+  
   // Emoji categories
   const emojiCategories = {
-    'Faces': ['😀', '😂', '🤣', '😊', '😍', '🤔', '😎', '🤯', '😈', '🤡', '👻', '💀'],
-    'Animals': ['🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁', '🐸'],
-    'Food': ['🍎', '🍌', '🍕', '🍔', '🍟', '🌭', '🍿', '🍩', '🍪', '🎂', '🍰', '🧁'],
-    'Objects': ['⚽', '🏀', '🎮', '🎯', '🎪', '🎨', '🎭', '🎪', '🚀', '💎', '⭐', '🔥'],
+    'Faces': ['😀', '😂', '😍', '🤔', '😎', '🤯', '😈', '🤡', '👻', '💀', '🔥', '💯', '⚡', '💎'],
+    'Animals': ['🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁', '🐮', '🐷', '🐸'],
+    'Food': ['🍎', '🍌', '🍓', '🍕', '🍔', '🌭', '🍟', '🍗', '🎂', '🍰', '🍪', '🍩', '☕', '🥤'],
+    'Objects': ['⚽', '🏀', '🎮', '🎸', '🎨', '📱', '💻', '🚗', '✈️', '🚀', '⭐', '🌟', '💫', '✨'],
   };
 
-  // Get available stickers for browsing
-  const getAvailableStickers = () => {
-    let filteredStickers = stickers;
-    
-    if (selectedPack !== 'all') {
-      const pack = stickerPacks.find(p => p.id === selectedPack);
-      filteredStickers = pack?.stickers || [];
-    }
-    
-    if (searchTerm) {
-      filteredStickers = filteredStickers.filter(sticker =>
-        sticker.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        sticker.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))
-      );
-    }
-    
-    return filteredStickers;
-  };
-
-  // Add element to canvas
-  const addElement = useCallback((type: StickerElement['type'], content: string, imageData?: string) => {
+  // Add element functions
+  const addTextElement = () => {
     const newElement: StickerElement = {
-      id: `element-${Date.now()}`,
-      type,
-      content,
-      x: Math.random() * 200 + 50,
-      y: Math.random() * 200 + 50,
-      width: type === 'text' ? 100 : 80,
-      height: type === 'text' ? 40 : 80,
+      id: `text-${Date.now()}`,
+      type: 'text',
+      content: 'Your Text',
+      x: 50,
+      y: 50,
+      width: 120,
+      height: 40,
       rotation: 0,
       flipX: false,
       flipY: false,
-      layer: currentLayer,
-      style: type === 'text' ? {
+      layer: elements.length,
+      style: {
         fontSize: 24,
-        color: '#ffffff',
+        color: '#FF6B9D',
         fontFamily: 'Arial',
-        fontWeight: 'normal'
-      } : undefined,
-      imageData
+        fontWeight: 'bold',
+      },
     };
-    
-    setElements(prev => [...prev, newElement]);
+    setElements([...elements, newElement]);
     setSelectedElement(newElement.id);
-    toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} added! 🎨`);
-  }, [currentLayer]);
+    toast.success('Text added! ✏️');
+  };
 
-  // Handle emoji selection
-  const handleEmojiSelect = (emoji: string) => {
-    addElement('emoji', emoji);
+  const addEmojiElement = (emoji: string) => {
+    const newElement: StickerElement = {
+      id: `emoji-${Date.now()}`,
+      type: 'emoji',
+      content: emoji,
+      x: 50,
+      y: 50,
+      width: 60,
+      height: 60,
+      rotation: 0,
+      flipX: false,
+      flipY: false,
+      layer: elements.length,
+      style: {
+        fontSize: 48,
+      },
+    };
+    setElements([...elements, newElement]);
+    setSelectedElement(newElement.id);
     setShowEmojiPicker(false);
+    toast.success(`${emoji} added!`);
   };
 
-  // Handle text addition
-  const handleAddText = () => {
-    if (newText.trim()) {
-      addElement('text', newText.trim());
-      setNewText('');
-      setShowTextInput(false);
-    }
-  };
-
-  // Handle image upload
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const imageData = e.target?.result as string;
-        addElement('image', file.name, imageData);
-      };
-      reader.readAsDataURL(file);
-      setShowImageUpload(false);
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image must be less than 5MB! 📏');
+      return;
     }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const imageData = e.target?.result as string;
+      const newElement: StickerElement = {
+        id: `image-${Date.now()}`,
+        type: 'image',
+        content: file.name,
+        x: 50,
+        y: 50,
+        width: 100,
+        height: 100,
+        rotation: 0,
+        flipX: false,
+        flipY: false,
+        layer: elements.length,
+        imageData,
+      };
+      setElements([...elements, newElement]);
+      setSelectedElement(newElement.id);
+      toast.success('Image added! 🖼️');
+    };
+    reader.readAsDataURL(file);
   };
 
-  // FIXED: Enhanced mouse event handlers for proper resize functionality
-  const handleMouseDown = (e: React.MouseEvent, elementId: string, action: 'drag' | 'resize', handle?: string) => {
+  // FIXED: Separate mouse handlers for drag vs resize
+  const handleMouseDown = useCallback((e: React.MouseEvent, elementId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Don't start drag if clicking on a resize handle
+    const target = e.target as HTMLElement;
+    if (target.classList.contains('resize-handle')) {
+      return; // Let resize handle its own mouse down
+    }
+    
+    const element = elements.find(el => el.id === elementId);
+    if (!element) return;
+
+    setSelectedElement(elementId);
+    
+    // Start dragging
+    setDragData({
+      isDragging: true,
+      startX: e.clientX,
+      startY: e.clientY,
+      elementStartX: element.x,
+      elementStartY: element.y,
+    });
+  }, [elements]);
+
+  // NEW: Separate resize handle mouse down
+  const handleResizeMouseDown = useCallback((e: React.MouseEvent, elementId: string, handle: string) => {
     e.preventDefault();
     e.stopPropagation();
     
     const element = elements.find(el => el.id === elementId);
     if (!element) return;
-    
+
     setSelectedElement(elementId);
     
-    if (action === 'drag') {
-      setDraggedElement(elementId);
-      const rect = canvasRef.current?.getBoundingClientRect();
-      if (rect) {
-        setDragOffset({
-          x: e.clientX - rect.left - element.x,
-          y: e.clientY - rect.top - element.y
-        });
-      }
-    } else if (action === 'resize') {
-      setIsResizing(true);
-      setResizeHandle(handle || 'se');
-      
-      // Store initial resize data
-      const rect = canvasRef.current?.getBoundingClientRect();
-      if (rect) {
-        setResizeStartData({
-          x: element.x,
-          y: element.y,
-          width: element.width,
-          height: element.height,
-          mouseX: e.clientX - rect.left,
-          mouseY: e.clientY - rect.top
-        });
-      }
-    }
-  };
+    // Start resizing
+    setResizeData({
+      isResizing: true,
+      handle,
+      startX: e.clientX,
+      startY: e.clientY,
+      elementStartX: element.x,
+      elementStartY: element.y,
+      elementStartWidth: element.width,
+      elementStartHeight: element.height,
+    });
+  }, [elements]);
 
-  // FIXED: Enhanced mouse move handler with proper resize logic
+  // FIXED: Enhanced mouse move handler
   const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (draggedElement) {
-      const rect = canvasRef.current?.getBoundingClientRect();
-      if (rect) {
-        const newX = e.clientX - rect.left - dragOffset.x;
-        const newY = e.clientY - rect.top - dragOffset.y;
+    // Handle dragging
+    if (dragData?.isDragging && selectedElement) {
+      const deltaX = e.clientX - dragData.startX;
+      const deltaY = e.clientY - dragData.startY;
+      
+      const newX = Math.max(0, Math.min(300 - 50, dragData.elementStartX + deltaX));
+      const newY = Math.max(0, Math.min(300 - 50, dragData.elementStartY + deltaY));
+      
+      setElements(prev => prev.map(el => 
+        el.id === selectedElement 
+          ? { ...el, x: newX, y: newY }
+          : el
+      ));
+      return;
+    }
+    
+    // Handle resizing
+    if (resizeData?.isResizing && selectedElement) {
+      const deltaX = e.clientX - resizeData.startX;
+      const deltaY = e.clientY - resizeData.startY;
+      
+      setElements(prev => prev.map(el => {
+        if (el.id !== selectedElement) return el;
         
-        setElements(prev => prev.map(el =>
-          el.id === draggedElement
-            ? { ...el, x: Math.max(0, Math.min(newX, 400 - el.width)), y: Math.max(0, Math.min(newY, 400 - el.height)) }
-            : el
-        ));
-      }
-    } else if (isResizing && selectedElement && resizeStartData) {
-      const rect = canvasRef.current?.getBoundingClientRect();
-      if (rect) {
-        const currentMouseX = e.clientX - rect.left;
-        const currentMouseY = e.clientY - rect.top;
+        let newX = resizeData.elementStartX;
+        let newY = resizeData.elementStartY;
+        let newWidth = resizeData.elementStartWidth;
+        let newHeight = resizeData.elementStartHeight;
         
-        // Calculate the difference from start position
-        const deltaX = currentMouseX - resizeStartData.mouseX;
-        const deltaY = currentMouseY - resizeStartData.mouseY;
-        
-        let newX = resizeStartData.x;
-        let newY = resizeStartData.y;
-        let newWidth = resizeStartData.width;
-        let newHeight = resizeStartData.height;
-        
-        // Handle different resize handles
-        switch (resizeHandle) {
+        switch (resizeData.handle) {
           case 'se': // Southeast (bottom-right)
-            newWidth = Math.max(20, resizeStartData.width + deltaX);
-            newHeight = Math.max(20, resizeStartData.height + deltaY);
+            newWidth = Math.max(20, resizeData.elementStartWidth + deltaX);
+            newHeight = Math.max(20, resizeData.elementStartHeight + deltaY);
             break;
           case 'sw': // Southwest (bottom-left)
-            newWidth = Math.max(20, resizeStartData.width - deltaX);
-            newHeight = Math.max(20, resizeStartData.height + deltaY);
-            newX = resizeStartData.x + deltaX;
-            // Prevent going beyond left edge
-            if (newX < 0) {
-              newWidth += newX;
-              newX = 0;
-            }
+            newWidth = Math.max(20, resizeData.elementStartWidth - deltaX);
+            newHeight = Math.max(20, resizeData.elementStartHeight + deltaY);
+            newX = Math.max(0, resizeData.elementStartX + deltaX);
             break;
           case 'ne': // Northeast (top-right)
-            newWidth = Math.max(20, resizeStartData.width + deltaX);
-            newHeight = Math.max(20, resizeStartData.height - deltaY);
-            newY = resizeStartData.y + deltaY;
-            // Prevent going beyond top edge
-            if (newY < 0) {
-              newHeight += newY;
-              newY = 0;
-            }
+            newWidth = Math.max(20, resizeData.elementStartWidth + deltaX);
+            newHeight = Math.max(20, resizeData.elementStartHeight - deltaY);
+            newY = Math.max(0, resizeData.elementStartY + deltaY);
             break;
           case 'nw': // Northwest (top-left)
-            newWidth = Math.max(20, resizeStartData.width - deltaX);
-            newHeight = Math.max(20, resizeStartData.height - deltaY);
-            newX = resizeStartData.x + deltaX;
-            newY = resizeStartData.y + deltaY;
-            // Prevent going beyond edges
-            if (newX < 0) {
-              newWidth += newX;
-              newX = 0;
-            }
-            if (newY < 0) {
-              newHeight += newY;
-              newY = 0;
-            }
+            newWidth = Math.max(20, resizeData.elementStartWidth - deltaX);
+            newHeight = Math.max(20, resizeData.elementStartHeight - deltaY);
+            newX = Math.max(0, resizeData.elementStartX + deltaX);
+            newY = Math.max(0, resizeData.elementStartY + deltaY);
             break;
         }
         
         // Ensure element stays within canvas bounds
-        newX = Math.max(0, Math.min(newX, 400 - newWidth));
-        newY = Math.max(0, Math.min(newY, 400 - newHeight));
-        newWidth = Math.min(newWidth, 400 - newX);
-        newHeight = Math.min(newHeight, 400 - newY);
+        newX = Math.max(0, Math.min(300 - newWidth, newX));
+        newY = Math.max(0, Math.min(300 - newHeight, newY));
         
-        setElements(prev => prev.map(el =>
-          el.id === selectedElement
-            ? { ...el, x: newX, y: newY, width: newWidth, height: newHeight }
-            : el
-        ));
-      }
+        return { ...el, x: newX, y: newY, width: newWidth, height: newHeight };
+      }));
     }
-  }, [draggedElement, isResizing, selectedElement, dragOffset, resizeHandle, resizeStartData]);
+  }, [dragData, resizeData, selectedElement]);
 
+  // FIXED: Enhanced mouse up handler
   const handleMouseUp = useCallback(() => {
-    setDraggedElement(null);
-    setIsResizing(false);
-    setResizeHandle(null);
-    setResizeStartData(null);
+    setDragData(null);
+    setResizeData(null);
   }, []);
 
-  // Add event listeners
+  // Mouse event listeners
   React.useEffect(() => {
-    if (draggedElement || isResizing) {
+    if (dragData?.isDragging || resizeData?.isResizing) {
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
       
@@ -299,19 +294,70 @@ export const StickersView = () => {
         document.removeEventListener('mouseup', handleMouseUp);
       };
     }
-  }, [draggedElement, isResizing, handleMouseMove, handleMouseUp]);
+  }, [dragData, resizeData, handleMouseMove, handleMouseUp]);
 
-  // Update element properties
-  const updateElement = (elementId: string, updates: Partial<StickerElement>) => {
-    setElements(prev => prev.map(el =>
-      el.id === elementId ? { ...el, ...updates } : el
+  // Update element content
+  const updateElementContent = (elementId: string, content: string) => {
+    setElements(prev => prev.map(el => 
+      el.id === elementId ? { ...el, content } : el
+    ));
+  };
+
+  // Update element style
+  const updateElementStyle = (elementId: string, style: Partial<StickerElement['style']>) => {
+    setElements(prev => prev.map(el => 
+      el.id === elementId 
+        ? { ...el, style: { ...el.style, ...style } }
+        : el
+    ));
+  };
+
+  // Layer management
+  const moveLayer = (elementId: string, direction: 'up' | 'down') => {
+    const element = elements.find(el => el.id === elementId);
+    if (!element) return;
+
+    const newLayer = direction === 'up' 
+      ? Math.min(elements.length - 1, element.layer + 1)
+      : Math.max(0, element.layer - 1);
+
+    setElements(prev => prev.map(el => {
+      if (el.id === elementId) {
+        return { ...el, layer: newLayer };
+      }
+      if (direction === 'up' && el.layer === newLayer && el.id !== elementId) {
+        return { ...el, layer: element.layer };
+      }
+      if (direction === 'down' && el.layer === newLayer && el.id !== elementId) {
+        return { ...el, layer: element.layer };
+      }
+      return el;
+    }));
+  };
+
+  // Transform functions
+  const rotateElement = (elementId: string) => {
+    setElements(prev => prev.map(el => 
+      el.id === elementId 
+        ? { ...el, rotation: (el.rotation + 90) % 360 }
+        : el
+    ));
+  };
+
+  const flipElement = (elementId: string, axis: 'x' | 'y') => {
+    setElements(prev => prev.map(el => 
+      el.id === elementId 
+        ? { ...el, [axis === 'x' ? 'flipX' : 'flipY']: !el[axis === 'x' ? 'flipX' : 'flipY'] }
+        : el
     ));
   };
 
   // Delete element
   const deleteElement = (elementId: string) => {
     setElements(prev => prev.filter(el => el.id !== elementId));
-    setSelectedElement(null);
+    if (selectedElement === elementId) {
+      setSelectedElement(null);
+    }
     toast.success('Element deleted! 🗑️');
   };
 
@@ -319,196 +365,120 @@ export const StickersView = () => {
   const clearCanvas = () => {
     setElements([]);
     setSelectedElement(null);
-    setCurrentLayer(1);
     toast.success('Canvas cleared! ✨');
   };
 
-  // Layer management
-  const moveLayer = (elementId: string, direction: 'up' | 'down') => {
-    const element = elements.find(el => el.id === elementId);
-    if (!element) return;
-    
-    const maxLayer = Math.max(...elements.map(el => el.layer));
-    const minLayer = Math.min(...elements.map(el => el.layer));
-    
-    let newLayer = element.layer;
-    if (direction === 'up' && element.layer < maxLayer) {
-      newLayer = element.layer + 1;
-    } else if (direction === 'down' && element.layer > minLayer) {
-      newLayer = element.layer - 1;
-    }
-    
-    // Swap layers if needed
-    const elementAtTargetLayer = elements.find(el => el.layer === newLayer);
-    if (elementAtTargetLayer) {
-      updateElement(elementAtTargetLayer.id, { layer: element.layer });
-    }
-    
-    updateElement(elementId, { layer: newLayer });
-    toast.success(`Layer ${direction === 'up' ? 'moved up' : 'moved down'}! 📚`);
-  };
-
-  // Get sorted elements by layer
-  const getSortedElements = () => {
-    return [...elements].sort((a, b) => a.layer - b.layer);
-  };
-
-  // FIXED: Save sticker function - saves to pack and clears canvas
+  // Save sticker function
   const saveSticker = async () => {
     if (elements.length === 0) {
-      toast.error('Add some elements to your sticker first! 🎨');
+      toast.error('Add some elements first! 🎨');
       return;
     }
 
     try {
-      // Generate a unique sticker name
-      const stickerName = `Sticker ${Date.now()}`;
-      
-      // Create the sticker object with current canvas elements
+      // Create the sticker object
       const newSticker: Sticker = {
         id: `sticker-${Date.now()}`,
-        name: stickerName,
-        imageUrl: `data:image/svg+xml;base64,${btoa('<svg>sticker</svg>')}`, // Placeholder
+        name: `Sticker ${Date.now()}`,
+        imageUrl: 'data:image/svg+xml;base64,' + btoa(generateSVG()),
         tags: ['custom', 'user-created'],
         createdBy: currentUser?.id || 'user-1',
         usageCount: 0,
-        packId: 'pack-default', // Save to "My Stickers" pack
-        elementData: [...elements] // Save all current elements
+        elementData: elements, // Store the element data for future editing
       };
 
-      // Add sticker to the store
-      addSticker(newSticker);
+      // Determine which pack to save to
+      let targetPackId = selectedPackId;
       
-      // Add to the default "My Stickers" pack
-      addStickerToPack(newSticker, 'pack-default');
+      if (!targetPackId || targetPackId === 'new') {
+        // Create new pack
+        if (!newPackName.trim()) {
+          toast.error('Enter a pack name! 📝');
+          return;
+        }
+        
+        const newPack = {
+          id: `pack-${Date.now()}`,
+          name: newPackName.trim(),
+          description: 'Custom sticker pack',
+          stickers: [],
+          category: 'custom' as const,
+          count: 0,
+          owned: true,
+          price: 0,
+          createdBy: currentUser?.id || 'user-1',
+          createdAt: new Date(),
+        };
+        
+        // Add the new pack first
+        addStickerPack(newPack);
+        targetPackId = newPack.id;
+        
+        toast.success(`New pack "${newPackName}" created! 📦`);
+      }
+
+      // Add sticker to the pack
+      addStickerToPack(newSticker, targetPackId);
       
-      // Award points
-      updateUserPoints(20);
+      // Update user points
+      updateUserPoints(10);
       
-      // Show success message
-      toast.success('Sticker saved successfully! 🎉 (+20 CP)', {
-        duration: 4000,
-        icon: '🎨',
-      });
-      
-      // Clear the canvas for new creation
+      // Clear the canvas and reset form
       clearCanvas();
+      setShowSaveModal(false);
+      setNewPackName('');
+      setSelectedPackId('');
+      
+      toast.success('Sticker saved successfully! 🎉 (+10 CP)');
       
     } catch (error) {
       console.error('Error saving sticker:', error);
-      toast.error('Failed to save sticker. Please try again! 😞');
+      toast.error('Failed to save sticker! 😞');
     }
   };
 
-  // Download sticker
-  const downloadSticker = () => {
-    if (elements.length === 0) {
-      toast.error('Add some elements to download! 🎨');
-      return;
-    }
+  // Generate SVG from elements
+  const generateSVG = () => {
+    const sortedElements = [...elements].sort((a, b) => a.layer - b.layer);
     
-    // Create a canvas element to render the sticker
-    const canvas = document.createElement('canvas');
-    canvas.width = 400;
-    canvas.height = 400;
-    const ctx = canvas.getContext('2d');
+    let svgContent = `<svg width="300" height="300" xmlns="http://www.w3.org/2000/svg">`;
     
-    if (ctx) {
-      // Set background
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, 400, 400);
+    sortedElements.forEach(element => {
+      const transform = `translate(${element.x}, ${element.y}) rotate(${element.rotation}) scale(${element.flipX ? -1 : 1}, ${element.flipY ? -1 : 1})`;
       
-      // Render elements (simplified version)
-      getSortedElements().forEach(element => {
-        ctx.save();
-        ctx.translate(element.x + element.width/2, element.y + element.height/2);
-        ctx.rotate(element.rotation * Math.PI / 180);
-        ctx.scale(element.flipX ? -1 : 1, element.flipY ? -1 : 1);
-        
-        if (element.type === 'text') {
-          ctx.fillStyle = element.style?.color || '#000000';
-          ctx.font = `${element.style?.fontSize || 24}px ${element.style?.fontFamily || 'Arial'}`;
-          ctx.textAlign = 'center';
-          ctx.fillText(element.content, 0, 0);
-        } else if (element.type === 'emoji') {
-          ctx.font = `${element.height}px Arial`;
-          ctx.textAlign = 'center';
-          ctx.fillText(element.content, 0, 0);
-        }
-        
-        ctx.restore();
-      });
-      
-      // Download
-      const link = document.createElement('a');
-      link.download = `sticker-${Date.now()}.png`;
-      link.href = canvas.toDataURL();
-      link.click();
-      
-      toast.success('Sticker downloaded! 📥');
-    }
+      if (element.type === 'text') {
+        svgContent += `<text x="0" y="${element.height * 0.7}" 
+          font-family="${element.style?.fontFamily || 'Arial'}" 
+          font-size="${element.style?.fontSize || 24}" 
+          font-weight="${element.style?.fontWeight || 'normal'}"
+          fill="${element.style?.color || '#000000'}" 
+          transform="${transform}">${element.content}</text>`;
+      } else if (element.type === 'emoji') {
+        svgContent += `<text x="0" y="${element.height * 0.8}" 
+          font-size="${element.style?.fontSize || 48}" 
+          transform="${transform}">${element.content}</text>`;
+      } else if (element.type === 'image' && element.imageData) {
+        svgContent += `<image x="0" y="0" 
+          width="${element.width}" 
+          height="${element.height}" 
+          href="${element.imageData}" 
+          transform="${transform}"/>`;
+      }
+    });
+    
+    svgContent += `</svg>`;
+    return svgContent;
   };
 
-  // Share sticker
-  const shareSticker = () => {
-    if (elements.length === 0) {
-      toast.error('Add some elements to share! 🎨');
-      return;
-    }
-    
-    if (navigator.share) {
-      navigator.share({
-        title: 'Check out my sticker!',
-        text: 'I created this awesome sticker in ClownRoom! 🎨',
-        url: window.location.href
-      });
-    } else {
-      navigator.clipboard.writeText(window.location.href);
-      toast.success('Link copied to clipboard! 📋');
-    }
-  };
+  // Get sorted elements for rendering
+  const sortedElements = [...elements].sort((a, b) => a.layer - b.layer);
+  const selectedElementData = elements.find(el => el.id === selectedElement);
 
-  // Purchase sticker pack
-  const handlePurchasePack = (packId: string) => {
-    const pack = stickerPacks.find(p => p.id === packId);
-    if (!pack || !currentUser) return;
-    
-    if (currentUser.clownPoints < pack.price) {
-      toast.error(`Not enough ClownPoints! Need ${pack.price} CP 💰`);
-      return;
-    }
-    
-    purchaseStickerPack(packId, currentUser.id);
-    toast.success(`${pack.name} pack purchased! 🎉 (-${pack.price} CP)`);
-  };
-
-  // Use sticker (add to canvas)
-  const useSticker = (sticker: Sticker) => {
-    if (sticker.elementData && sticker.elementData.length > 0) {
-      // Add all elements from the saved sticker to canvas
-      const newElements = sticker.elementData.map(element => ({
-        ...element,
-        id: `element-${Date.now()}-${Math.random()}`, // New unique ID
-        x: element.x + Math.random() * 50, // Slight offset
-        y: element.y + Math.random() * 50,
-      }));
-      
-      setElements(prev => [...prev, ...newElements]);
-      updateStickerUsage(sticker.id);
-      toast.success(`${sticker.name} added to canvas! 🎨`);
-    } else {
-      // Fallback for stickers without element data
-      addElement('emoji', '🎨');
-      toast.success(`${sticker.name} added! 🎨`);
-    }
-    
-    setPreviewSticker(null);
-  };
-
-  const selectedElementData = selectedElement ? elements.find(el => el.id === selectedElement) : null;
+  // Get user's owned packs
+  const ownedPacks = stickerPacks.filter(pack => pack.owned);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-dark via-secondary/20 to-dark relative overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-dark via-secondary/10 to-dark relative overflow-hidden">
       {/* Artistic Background */}
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute top-16 left-12 text-3xl opacity-15 animate-float">🎨</div>
@@ -523,8 +493,8 @@ export const StickersView = () => {
           <div className="flex bg-dark-card rounded-xl p-1 mb-6 max-w-md mx-auto">
             {[
               { id: 'create', label: 'Create', icon: Plus },
-              { id: 'browse', label: 'Browse', icon: Grid },
-              { id: 'packs', label: 'Packs', icon: ShoppingCart },
+              { id: 'packs', label: 'Packs', icon: Grid },
+              { id: 'collection', label: 'Collection', icon: Star },
             ].map((tab) => {
               const Icon = tab.icon;
               return (
@@ -556,34 +526,24 @@ export const StickersView = () => {
               >
                 {/* Canvas */}
                 <div className="lg:col-span-2">
-                  <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
+                  <div className="bg-dark-card rounded-xl p-6 border border-gray-800">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-white font-bold text-lg">Sticker Canvas</h3>
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={saveSticker}
-                          className="px-4 py-2 bg-gradient-to-r from-secondary to-blue-500 text-white rounded-lg hover:from-secondary/90 hover:to-blue-500/90 transition-all flex items-center space-x-2"
-                        >
-                          <Save size={16} />
-                          <span>Save</span>
-                        </button>
-                        <button
-                          onClick={downloadSticker}
-                          className="p-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 hover:text-white transition-colors"
-                        >
-                          <Download size={16} />
-                        </button>
-                        <button
-                          onClick={shareSticker}
-                          className="p-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 hover:text-white transition-colors"
-                        >
-                          <Share2 size={16} />
-                        </button>
+                      <h3 className="text-white font-bold text-lg">Canvas</h3>
+                      <div className="flex space-x-2">
                         <button
                           onClick={clearCanvas}
                           className="p-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors"
+                          title="Clear Canvas"
                         >
                           <Trash2 size={16} />
+                        </button>
+                        <button
+                          onClick={() => setShowSaveModal(true)}
+                          disabled={elements.length === 0}
+                          className="p-2 bg-primary/20 text-primary rounded-lg hover:bg-primary/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Save Sticker"
+                        >
+                          <Save size={16} />
                         </button>
                       </div>
                     </div>
@@ -591,14 +551,15 @@ export const StickersView = () => {
                     {/* Canvas Area */}
                     <div 
                       ref={canvasRef}
-                      className="relative w-full h-96 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg border-2 border-dashed border-gray-400 overflow-hidden cursor-crosshair"
+                      className="relative w-full h-80 bg-white rounded-lg border-2 border-dashed border-gray-300 overflow-hidden"
+                      style={{ aspectRatio: '1' }}
                       onClick={() => setSelectedElement(null)}
                     >
-                      {getSortedElements().map((element) => (
+                      {sortedElements.map((element) => (
                         <div
                           key={element.id}
                           className={`absolute cursor-move select-none ${
-                            selectedElement === element.id ? 'ring-2 ring-secondary' : ''
+                            selectedElement === element.id ? 'ring-2 ring-primary' : ''
                           }`}
                           style={{
                             left: element.x,
@@ -608,20 +569,17 @@ export const StickersView = () => {
                             transform: `rotate(${element.rotation}deg) scaleX(${element.flipX ? -1 : 1}) scaleY(${element.flipY ? -1 : 1})`,
                             zIndex: element.layer,
                           }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedElement(element.id);
-                          }}
-                          onMouseDown={(e) => handleMouseDown(e, element.id, 'drag')}
+                          onMouseDown={(e) => handleMouseDown(e, element.id)}
                         >
+                          {/* Element Content */}
                           {element.type === 'text' && (
                             <div
                               className="w-full h-full flex items-center justify-center text-center break-words"
                               style={{
-                                fontSize: element.style?.fontSize,
-                                color: element.style?.color,
-                                fontFamily: element.style?.fontFamily,
-                                fontWeight: element.style?.fontWeight,
+                                fontSize: element.style?.fontSize || 24,
+                                color: element.style?.color || '#000000',
+                                fontFamily: element.style?.fontFamily || 'Arial',
+                                fontWeight: element.style?.fontWeight || 'normal',
                               }}
                             >
                               {element.content}
@@ -629,9 +587,11 @@ export const StickersView = () => {
                           )}
                           
                           {element.type === 'emoji' && (
-                            <div 
+                            <div
                               className="w-full h-full flex items-center justify-center"
-                              style={{ fontSize: element.height * 0.8 }}
+                              style={{
+                                fontSize: element.style?.fontSize || 48,
+                              }}
                             >
                               {element.content}
                             </div>
@@ -646,28 +606,25 @@ export const StickersView = () => {
                             />
                           )}
                           
-                          {/* FIXED: Enhanced resize handles with proper cursors and positioning */}
+                          {/* FIXED: Resize Handles - Only show for selected element */}
                           {selectedElement === element.id && (
                             <>
-                              {/* Southeast handle (bottom-right) */}
+                              {/* Corner resize handles */}
                               <div
-                                className="absolute -bottom-1 -right-1 w-4 h-4 bg-secondary rounded-full cursor-se-resize border-2 border-white shadow-lg hover:bg-secondary/80 transition-colors"
-                                onMouseDown={(e) => handleMouseDown(e, element.id, 'resize', 'se')}
+                                className="resize-handle absolute -top-2 -left-2 w-4 h-4 bg-primary border-2 border-white rounded-full cursor-nw-resize shadow-lg hover:scale-110 transition-transform"
+                                onMouseDown={(e) => handleResizeMouseDown(e, element.id, 'nw')}
                               />
-                              {/* Northeast handle (top-right) */}
                               <div
-                                className="absolute -top-1 -right-1 w-4 h-4 bg-secondary rounded-full cursor-ne-resize border-2 border-white shadow-lg hover:bg-secondary/80 transition-colors"
-                                onMouseDown={(e) => handleMouseDown(e, element.id, 'resize', 'ne')}
+                                className="resize-handle absolute -top-2 -right-2 w-4 h-4 bg-primary border-2 border-white rounded-full cursor-ne-resize shadow-lg hover:scale-110 transition-transform"
+                                onMouseDown={(e) => handleResizeMouseDown(e, element.id, 'ne')}
                               />
-                              {/* Southwest handle (bottom-left) */}
                               <div
-                                className="absolute -bottom-1 -left-1 w-4 h-4 bg-secondary rounded-full cursor-sw-resize border-2 border-white shadow-lg hover:bg-secondary/80 transition-colors"
-                                onMouseDown={(e) => handleMouseDown(e, element.id, 'resize', 'sw')}
+                                className="resize-handle absolute -bottom-2 -left-2 w-4 h-4 bg-primary border-2 border-white rounded-full cursor-sw-resize shadow-lg hover:scale-110 transition-transform"
+                                onMouseDown={(e) => handleResizeMouseDown(e, element.id, 'sw')}
                               />
-                              {/* Northwest handle (top-left) */}
                               <div
-                                className="absolute -top-1 -left-1 w-4 h-4 bg-secondary rounded-full cursor-nw-resize border-2 border-white shadow-lg hover:bg-secondary/80 transition-colors"
-                                onMouseDown={(e) => handleMouseDown(e, element.id, 'resize', 'nw')}
+                                className="resize-handle absolute -bottom-2 -right-2 w-4 h-4 bg-primary border-2 border-white rounded-full cursor-se-resize shadow-lg hover:scale-110 transition-transform"
+                                onMouseDown={(e) => handleResizeMouseDown(e, element.id, 'se')}
                               />
                             </>
                           )}
@@ -675,11 +632,10 @@ export const StickersView = () => {
                       ))}
                       
                       {elements.length === 0 && (
-                        <div className="absolute inset-0 flex items-center justify-center text-gray-500">
+                        <div className="absolute inset-0 flex items-center justify-center text-gray-400">
                           <div className="text-center">
-                            <Palette size={48} className="mx-auto mb-2 opacity-50" />
+                            <div className="text-4xl mb-2">🎨</div>
                             <p>Start creating your sticker!</p>
-                            <p className="text-sm">Add text, emojis, or images</p>
                           </div>
                         </div>
                       )}
@@ -688,290 +644,217 @@ export const StickersView = () => {
                 </div>
 
                 {/* Tools Panel */}
-                <div className="space-y-4">
+                <div className="space-y-6">
                   {/* Add Elements */}
                   <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
                     <h4 className="text-white font-bold mb-3">Add Elements</h4>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="space-y-3">
                       <button
-                        onClick={() => setShowTextInput(true)}
-                        className="p-3 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 hover:text-white transition-colors flex flex-col items-center space-y-1"
+                        onClick={addTextElement}
+                        className="w-full flex items-center space-x-3 p-3 bg-dark-light rounded-lg hover:bg-gray-700 transition-colors"
                       >
-                        <Type size={20} />
-                        <span className="text-xs">Text</span>
+                        <Type size={20} className="text-primary" />
+                        <span className="text-white">Add Text</span>
                       </button>
+                      
+                      <div className="relative">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleImageUpload}
+                          className="hidden"
+                          id="image-upload"
+                        />
+                        <label
+                          htmlFor="image-upload"
+                          className="w-full flex items-center space-x-3 p-3 bg-dark-light rounded-lg hover:bg-gray-700 transition-colors cursor-pointer"
+                        >
+                          <ImageIcon size={20} className="text-secondary" />
+                          <span className="text-white">Add Image</span>
+                        </label>
+                      </div>
+                      
                       <button
-                        onClick={() => setShowEmojiPicker(true)}
-                        className="p-3 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 hover:text-white transition-colors flex flex-col items-center space-y-1"
+                        onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                        className="w-full flex items-center space-x-3 p-3 bg-dark-light rounded-lg hover:bg-gray-700 transition-colors"
                       >
-                        <Smile size={20} />
-                        <span className="text-xs">Emoji</span>
-                      </button>
-                      <button
-                        onClick={() => fileInputRef.current?.click()}
-                        className="p-3 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 hover:text-white transition-colors flex flex-col items-center space-y-1"
-                      >
-                        <Image size={20} />
-                        <span className="text-xs">Image</span>
+                        <Smile size={20} className="text-accent" />
+                        <span className="text-white">Add Emoji</span>
                       </button>
                     </div>
-                    
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleImageUpload}
-                      className="hidden"
-                    />
                   </div>
 
-                  {/* Layer Management */}
-                  {elements.length > 0 && (
-                    <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
-                      <h4 className="text-white font-bold mb-3 flex items-center space-x-2">
-                        <Layers size={16} />
-                        <span>Layers</span>
-                      </h4>
-                      <div className="space-y-2 max-h-32 overflow-y-auto">
-                        {getSortedElements().reverse().map((element, index) => (
-                          <div
-                            key={element.id}
-                            className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors ${
-                              selectedElement === element.id
-                                ? 'bg-secondary/20 border border-secondary'
-                                : 'bg-gray-700 hover:bg-gray-600'
-                            }`}
-                            onClick={() => setSelectedElement(element.id)}
-                          >
-                            <div className="flex items-center space-x-2">
-                              <span className="text-xs text-gray-400">L{element.layer}</span>
-                              <span className="text-white text-sm truncate">
-                                {element.type === 'text' ? element.content : 
-                                 element.type === 'emoji' ? element.content :
-                                 element.content}
-                              </span>
+                  {/* Emoji Picker */}
+                  <AnimatePresence>
+                    {showEmojiPicker && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="bg-dark-card rounded-xl p-4 border border-gray-800"
+                      >
+                        <h4 className="text-white font-bold mb-3">Choose Emoji</h4>
+                        <div className="space-y-3 max-h-48 overflow-y-auto">
+                          {Object.entries(emojiCategories).map(([category, emojis]) => (
+                            <div key={category}>
+                              <h5 className="text-gray-400 text-sm mb-2">{category}</h5>
+                              <div className="grid grid-cols-7 gap-2">
+                                {emojis.map((emoji) => (
+                                  <button
+                                    key={emoji}
+                                    onClick={() => addEmojiElement(emoji)}
+                                    className="p-2 text-2xl hover:bg-gray-700 rounded-lg transition-colors"
+                                  >
+                                    {emoji}
+                                  </button>
+                                ))}
+                              </div>
                             </div>
-                            <div className="flex items-center space-x-1">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  moveLayer(element.id, 'up');
-                                }}
-                                className="p-1 text-gray-400 hover:text-white transition-colors"
-                              >
-                                <ChevronUp size={12} />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  moveLayer(element.id, 'down');
-                                }}
-                                className="p-1 text-gray-400 hover:text-white transition-colors"
-                              >
-                                <ChevronDown size={12} />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
 
                   {/* Element Properties */}
                   {selectedElementData && (
                     <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
-                      <h4 className="text-white font-bold mb-3">Properties</h4>
+                      <h4 className="text-white font-bold mb-3">Element Properties</h4>
                       
-                      <div className="space-y-3">
-                        {/* Position */}
-                        <div className="grid grid-cols-2 gap-2">
+                      {/* Content Editor */}
+                      {selectedElementData.type === 'text' && (
+                        <div className="space-y-3">
                           <div>
-                            <label className="block text-xs text-gray-400 mb-1">X</label>
+                            <label className="block text-gray-300 text-sm mb-1">Text</label>
                             <input
-                              type="number"
-                              value={Math.round(selectedElementData.x)}
-                              onChange={(e) => updateElement(selectedElementData.id, { x: parseInt(e.target.value) || 0 })}
-                              className="w-full bg-gray-700 text-white rounded px-2 py-1 text-sm"
+                              type="text"
+                              value={selectedElementData.content}
+                              onChange={(e) => updateElementContent(selectedElementData.id, e.target.value)}
+                              className="w-full bg-dark-light text-white rounded px-3 py-2 border border-gray-700 focus:border-primary focus:outline-none"
                             />
                           </div>
-                          <div>
-                            <label className="block text-xs text-gray-400 mb-1">Y</label>
-                            <input
-                              type="number"
-                              value={Math.round(selectedElementData.y)}
-                              onChange={(e) => updateElement(selectedElementData.id, { y: parseInt(e.target.value) || 0 })}
-                              className="w-full bg-gray-700 text-white rounded px-2 py-1 text-sm"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Size */}
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="block text-xs text-gray-400 mb-1">Width</label>
-                            <input
-                              type="number"
-                              value={Math.round(selectedElementData.width)}
-                              onChange={(e) => updateElement(selectedElementData.id, { width: parseInt(e.target.value) || 20 })}
-                              className="w-full bg-gray-700 text-white rounded px-2 py-1 text-sm"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-400 mb-1">Height</label>
-                            <input
-                              type="number"
-                              value={Math.round(selectedElementData.height)}
-                              onChange={(e) => updateElement(selectedElementData.id, { height: parseInt(e.target.value) || 20 })}
-                              className="w-full bg-gray-700 text-white rounded px-2 py-1 text-sm"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Rotation */}
-                        <div>
-                          <label className="block text-xs text-gray-400 mb-1">Rotation</label>
-                          <input
-                            type="range"
-                            min="-180"
-                            max="180"
-                            value={selectedElementData.rotation}
-                            onChange={(e) => updateElement(selectedElementData.id, { rotation: parseInt(e.target.value) })}
-                            className="w-full"
-                          />
-                          <div className="text-xs text-gray-400 text-center">{selectedElementData.rotation}°</div>
-                        </div>
-
-                        {/* Text Properties */}
-                        {selectedElementData.type === 'text' && (
-                          <>
+                          
+                          <div className="grid grid-cols-2 gap-3">
                             <div>
-                              <label className="block text-xs text-gray-400 mb-1">Font Size</label>
+                              <label className="block text-gray-300 text-sm mb-1">Size</label>
                               <input
                                 type="range"
                                 min="12"
                                 max="72"
                                 value={selectedElementData.style?.fontSize || 24}
-                                onChange={(e) => updateElement(selectedElementData.id, {
-                                  style: { ...selectedElementData.style, fontSize: parseInt(e.target.value) }
-                                })}
+                                onChange={(e) => updateElementStyle(selectedElementData.id, { fontSize: parseInt(e.target.value) })}
                                 className="w-full"
                               />
-                              <div className="text-xs text-gray-400 text-center">{selectedElementData.style?.fontSize || 24}px</div>
                             </div>
                             
                             <div>
-                              <label className="block text-xs text-gray-400 mb-1">Color</label>
+                              <label className="block text-gray-300 text-sm mb-1">Color</label>
                               <input
                                 type="color"
-                                value={selectedElementData.style?.color || '#ffffff'}
-                                onChange={(e) => updateElement(selectedElementData.id, {
-                                  style: { ...selectedElementData.style, color: e.target.value }
-                                })}
-                                className="w-full h-8 rounded"
+                                value={selectedElementData.style?.color || '#FF6B9D'}
+                                onChange={(e) => updateElementStyle(selectedElementData.id, { color: e.target.value })}
+                                className="w-full h-8 rounded border border-gray-700"
                               />
                             </div>
-                          </>
-                        )}
+                          </div>
+                        </div>
+                      )}
 
-                        {/* Transform Controls */}
+                      {/* Transform Controls */}
+                      <div className="mt-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-300 text-sm">Layer</span>
+                          <div className="flex space-x-1">
+                            <button
+                              onClick={() => moveLayer(selectedElementData.id, 'up')}
+                              className="p-1 bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors"
+                            >
+                              <ChevronUp size={16} />
+                            </button>
+                            <button
+                              onClick={() => moveLayer(selectedElementData.id, 'down')}
+                              className="p-1 bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors"
+                            >
+                              <ChevronDown size={16} />
+                            </button>
+                          </div>
+                        </div>
+                        
                         <div className="flex space-x-2">
                           <button
-                            onClick={() => updateElement(selectedElementData.id, { flipX: !selectedElementData.flipX })}
-                            className={`flex-1 p-2 rounded text-xs transition-colors ${
-                              selectedElementData.flipX ? 'bg-secondary text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                            }`}
+                            onClick={() => rotateElement(selectedElementData.id)}
+                            className="flex-1 p-2 bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors flex items-center justify-center space-x-1"
                           >
-                            <FlipHorizontal size={14} className="mx-auto" />
+                            <RotateCw size={16} />
+                            <span className="text-sm">Rotate</span>
                           </button>
+                          
                           <button
-                            onClick={() => updateElement(selectedElementData.id, { flipY: !selectedElementData.flipY })}
-                            className={`flex-1 p-2 rounded text-xs transition-colors ${
-                              selectedElementData.flipY ? 'bg-secondary text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                            }`}
+                            onClick={() => flipElement(selectedElementData.id, 'x')}
+                            className="flex-1 p-2 bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors flex items-center justify-center space-x-1"
                           >
-                            <FlipVertical size={14} className="mx-auto" />
+                            <FlipHorizontal size={16} />
+                            <span className="text-sm">Flip H</span>
                           </button>
+                          
                           <button
-                            onClick={() => deleteElement(selectedElementData.id)}
-                            className="flex-1 p-2 bg-red-500/20 text-red-400 rounded text-xs hover:bg-red-500/30 transition-colors"
+                            onClick={() => flipElement(selectedElementData.id, 'y')}
+                            className="flex-1 p-2 bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors flex items-center justify-center space-x-1"
                           >
-                            <Trash2 size={14} className="mx-auto" />
+                            <FlipVertical size={16} />
+                            <span className="text-sm">Flip V</span>
                           </button>
                         </div>
+                        
+                        <button
+                          onClick={() => deleteElement(selectedElementData.id)}
+                          className="w-full p-2 bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 transition-colors flex items-center justify-center space-x-2"
+                        >
+                          <Trash2 size={16} />
+                          <span>Delete Element</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Layers Panel */}
+                  {elements.length > 0 && (
+                    <div className="bg-dark-card rounded-xl p-4 border border-gray-800">
+                      <h4 className="text-white font-bold mb-3">Layers</h4>
+                      <div className="space-y-2 max-h-32 overflow-y-auto">
+                        {[...elements]
+                          .sort((a, b) => b.layer - a.layer)
+                          .map((element) => (
+                            <div
+                              key={element.id}
+                              className={`flex items-center space-x-2 p-2 rounded cursor-pointer transition-colors ${
+                                selectedElement === element.id
+                                  ? 'bg-primary/20 border border-primary'
+                                  : 'bg-dark-light hover:bg-gray-700'
+                              }`}
+                              onClick={() => setSelectedElement(element.id)}
+                            >
+                              <div className="text-lg">
+                                {element.type === 'text' && '📝'}
+                                {element.type === 'emoji' && element.content}
+                                {element.type === 'image' && '🖼️'}
+                              </div>
+                              <div className="flex-1">
+                                <div className="text-white text-sm font-medium">
+                                  {element.type === 'text' ? element.content.slice(0, 10) + '...' : 
+                                   element.type === 'emoji' ? element.content :
+                                   element.content}
+                                </div>
+                                <div className="text-gray-400 text-xs">
+                                  Layer {element.layer}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
                       </div>
                     </div>
                   )}
                 </div>
-              </motion.div>
-            )}
-
-            {/* Browse Tab */}
-            {activeTab === 'browse' && (
-              <motion.div
-                key="browse"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="space-y-4"
-              >
-                {/* Search and Filter */}
-                <div className="flex space-x-4 max-w-md mx-auto">
-                  <div className="flex-1 relative">
-                    <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="Search stickers..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 bg-dark-card text-white rounded-lg border border-gray-700 focus:border-secondary focus:outline-none"
-                    />
-                  </div>
-                  <select
-                    value={selectedPack}
-                    onChange={(e) => setSelectedPack(e.target.value)}
-                    className="bg-dark-card text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-secondary focus:outline-none"
-                  >
-                    <option value="all">All Packs</option>
-                    {stickerPacks.filter(pack => pack.owned).map((pack) => (
-                      <option key={pack.id} value={pack.id}>
-                        {pack.name} ({pack.count})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Stickers Grid */}
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                  {getAvailableStickers().map((sticker) => (
-                    <motion.div
-                      key={sticker.id}
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      className="bg-dark-card rounded-xl p-3 border border-gray-800 hover:border-secondary transition-colors cursor-pointer group"
-                      onClick={() => setPreviewSticker(sticker)}
-                    >
-                      <div className="aspect-square bg-gray-700 rounded-lg mb-2 flex items-center justify-center text-2xl">
-                        🎨
-                      </div>
-                      <h4 className="text-white font-semibold text-sm truncate">{sticker.name}</h4>
-                      <p className="text-gray-400 text-xs">Used {sticker.usageCount} times</p>
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {sticker.tags.slice(0, 2).map((tag) => (
-                          <span key={tag} className="px-1 py-0.5 bg-secondary/20 text-secondary rounded text-xs">
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-
-                {getAvailableStickers().length === 0 && (
-                  <div className="text-center py-8 text-gray-400">
-                    <Grid size={48} className="mx-auto mb-4 opacity-50" />
-                    <p>No stickers found. Create some first! 🎨</p>
-                  </div>
-                )}
               </motion.div>
             )}
 
@@ -982,203 +865,207 @@ export const StickersView = () => {
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
-                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+                className="space-y-6"
               >
-                {stickerPacks.map((pack) => (
-                  <motion.div
-                    key={pack.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-dark-card rounded-xl p-4 border border-gray-800"
-                  >
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-white font-bold">{pack.name}</h3>
-                      {pack.owned ? (
-                        <Crown size={20} className="text-accent" />
-                      ) : (
-                        <div className="flex items-center space-x-1 text-accent">
-                          <Star size={16} />
-                          <span className="font-bold">{pack.price}</span>
+                <div className="text-center">
+                  <h2 className="text-2xl font-bold text-white mb-2">Sticker Packs</h2>
+                  <p className="text-gray-400">Discover and collect amazing sticker packs</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {stickerPacks.map((pack) => (
+                    <div
+                      key={pack.id}
+                      className="bg-dark-card rounded-xl p-6 border border-gray-800 hover:border-gray-700 transition-colors"
+                    >
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-white font-bold">{pack.name}</h3>
+                        {pack.owned ? (
+                          <div className="flex items-center space-x-1 text-green-400">
+                            <Crown size={16} />
+                            <span className="text-sm">Owned</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center space-x-1 text-accent">
+                            <Star size={16} />
+                            <span className="text-sm">{pack.price} CP</span>
+                          </div>
+                        )}
+                      </div>
+                      
+                      <p className="text-gray-400 text-sm mb-4">{pack.description}</p>
+                      
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-300 text-sm">{pack.count} stickers</span>
+                        
+                        {pack.owned ? (
+                          <button className="px-4 py-2 bg-green-500/20 text-green-400 rounded-lg cursor-default">
+                            Owned
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              if (currentUser && currentUser.clownPoints >= pack.price) {
+                                purchaseStickerPack(pack.id, currentUser.id);
+                                toast.success(`${pack.name} purchased! 🎉`);
+                              } else {
+                                toast.error('Not enough ClownPoints! 💰');
+                              }
+                            }}
+                            disabled={!currentUser || currentUser.clownPoints < pack.price}
+                            className="px-4 py-2 bg-accent text-dark rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
+                          >
+                            <ShoppingCart size={16} />
+                            <span>Buy</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+
+            {/* Collection Tab */}
+            {activeTab === 'collection' && (
+              <motion.div
+                key="collection"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-6"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-2xl font-bold text-white mb-2">My Collection</h2>
+                    <p className="text-gray-400">Your created and collected stickers</p>
+                  </div>
+                  
+                  <div className="relative">
+                    <Search size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search stickers..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-10 pr-4 py-2 bg-dark-light text-white rounded-lg border border-gray-700 focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                  {stickers
+                    .filter(sticker => 
+                      sticker.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      sticker.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))
+                    )
+                    .map((sticker) => (
+                      <div
+                        key={sticker.id}
+                        className="bg-dark-card rounded-xl p-4 border border-gray-800 hover:border-gray-700 transition-colors group"
+                      >
+                        <div className="aspect-square bg-white rounded-lg mb-3 flex items-center justify-center overflow-hidden">
+                          <img
+                            src={sticker.imageUrl}
+                            alt={sticker.name}
+                            className="w-full h-full object-cover"
+                          />
                         </div>
-                      )}
-                    </div>
-                    
-                    <p className="text-gray-400 text-sm mb-3">{pack.description}</p>
-                    
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-gray-300 text-sm">{pack.count} stickers</span>
-                      <span className="px-2 py-1 bg-secondary/20 text-secondary rounded-full text-xs">
-                        {pack.category}
-                      </span>
-                    </div>
-                    
-                    {pack.owned ? (
-                      <button
-                        onClick={() => setSelectedPack(pack.id)}
-                        className="w-full py-2 bg-secondary/20 text-secondary rounded-lg hover:bg-secondary/30 transition-colors"
-                      >
-                        View Stickers
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => handlePurchasePack(pack.id)}
-                        disabled={!currentUser || currentUser.clownPoints < pack.price}
-                        className="w-full py-2 bg-accent text-dark rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-bold"
-                      >
-                        Purchase for {pack.price} CP
-                      </button>
-                    )}
-                  </motion.div>
-                ))}
+                        
+                        <h4 className="text-white font-medium text-sm mb-1 truncate">{sticker.name}</h4>
+                        <p className="text-gray-400 text-xs">Used {sticker.usageCount} times</p>
+                        
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {sticker.tags.slice(0, 2).map((tag) => (
+                            <span
+                              key={tag}
+                              className="px-2 py-1 bg-primary/20 text-primary rounded text-xs"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+
+                {stickers.length === 0 && (
+                  <div className="text-center py-12 text-gray-400">
+                    <div className="text-6xl mb-4">🎨</div>
+                    <p className="text-lg">No stickers yet</p>
+                    <p className="text-sm">Create your first sticker to get started!</p>
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
         </div>
       </div>
 
-      {/* Text Input Modal */}
+      {/* Save Modal */}
       <AnimatePresence>
-        {showTextInput && (
+        {showSaveModal && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-            onClick={() => setShowTextInput(false)}
+            onClick={() => setShowSaveModal(false)}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-dark-card rounded-xl p-6 w-full max-w-sm"
+              className="bg-dark-card rounded-2xl p-6 w-full max-w-md"
               onClick={(e) => e.stopPropagation()}
             >
-              <h3 className="text-white font-bold mb-4">Add Text</h3>
-              <input
-                type="text"
-                value={newText}
-                onChange={(e) => setNewText(e.target.value)}
-                placeholder="Enter your text..."
-                className="w-full bg-dark-light text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-secondary focus:outline-none mb-4"
-                autoFocus
-                onKeyDown={(e) => e.key === 'Enter' && handleAddText()}
-              />
-              <div className="flex space-x-3">
+              <h2 className="text-xl font-bold text-white mb-4">Save Sticker</h2>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-gray-300 text-sm mb-2">Save to Pack</label>
+                  <select
+                    value={selectedPackId}
+                    onChange={(e) => setSelectedPackId(e.target.value)}
+                    className="w-full bg-dark-light text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-primary focus:outline-none"
+                  >
+                    <option value="">Select a pack...</option>
+                    {ownedPacks.map((pack) => (
+                      <option key={pack.id} value={pack.id}>
+                        {pack.name} ({pack.count} stickers)
+                      </option>
+                    ))}
+                    <option value="new">Create New Pack</option>
+                  </select>
+                </div>
+                
+                {(selectedPackId === 'new' || selectedPackId === '') && (
+                  <div>
+                    <label className="block text-gray-300 text-sm mb-2">New Pack Name</label>
+                    <input
+                      type="text"
+                      value={newPackName}
+                      onChange={(e) => setNewPackName(e.target.value)}
+                      placeholder="Enter pack name..."
+                      className="w-full bg-dark-light text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                )}
+              </div>
+              
+              <div className="flex space-x-3 mt-6">
                 <button
-                  onClick={() => setShowTextInput(false)}
-                  className="flex-1 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                  onClick={() => setShowSaveModal(false)}
+                  className="flex-1 py-2 bg-gray-700 text-white rounded-lg font-semibold hover:bg-gray-600 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={handleAddText}
-                  disabled={!newText.trim()}
-                  className="flex-1 py-2 bg-secondary text-white rounded-lg hover:bg-secondary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={saveSticker}
+                  className="flex-1 py-2 bg-primary text-white rounded-lg font-semibold hover:bg-primary/90 transition-colors"
                 >
-                  Add Text
+                  Save Sticker
                 </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Emoji Picker Modal */}
-      <AnimatePresence>
-        {showEmojiPicker && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-            onClick={() => setShowEmojiPicker(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-dark-card rounded-xl p-6 w-full max-w-md max-h-96 overflow-y-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-white font-bold">Choose Emoji</h3>
-                <button
-                  onClick={() => setShowEmojiPicker(false)}
-                  className="text-gray-400 hover:text-white transition-colors"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-              
-              <div className="space-y-4">
-                {Object.entries(emojiCategories).map(([category, emojis]) => (
-                  <div key={category}>
-                    <h4 className="text-gray-300 font-semibold mb-2">{category}</h4>
-                    <div className="grid grid-cols-6 gap-2">
-                      {emojis.map((emoji) => (
-                        <button
-                          key={emoji}
-                          onClick={() => handleEmojiSelect(emoji)}
-                          className="p-2 text-2xl hover:bg-gray-700 rounded-lg transition-colors"
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Sticker Preview Modal */}
-      <AnimatePresence>
-        {previewSticker && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-            onClick={() => setPreviewSticker(null)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-dark-card rounded-xl p-6 w-full max-w-sm"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="text-center">
-                <div className="w-32 h-32 bg-gray-700 rounded-lg mx-auto mb-4 flex items-center justify-center text-4xl">
-                  🎨
-                </div>
-                <h3 className="text-white font-bold text-lg mb-2">{previewSticker.name}</h3>
-                <p className="text-gray-400 text-sm mb-4">Used {previewSticker.usageCount} times</p>
-                
-                <div className="flex flex-wrap gap-2 justify-center mb-4">
-                  {previewSticker.tags.map((tag) => (
-                    <span key={tag} className="px-2 py-1 bg-secondary/20 text-secondary rounded-full text-xs">
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-                
-                <div className="flex space-x-3">
-                  <button
-                    onClick={() => setPreviewSticker(null)}
-                    className="flex-1 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
-                  >
-                    Close
-                  </button>
-                  <button
-                    onClick={() => useSticker(previewSticker)}
-                    className="flex-1 py-2 bg-secondary text-white rounded-lg hover:bg-secondary/90 transition-colors"
-                  >
-                    Use Sticker
-                  </button>
-                </div>
               </div>
             </motion.div>
           </motion.div>
