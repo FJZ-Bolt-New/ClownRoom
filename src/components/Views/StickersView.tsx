@@ -356,7 +356,7 @@ export const StickersView = () => {
     }
   };
 
-  const handlePreviewSticker = (sticker: Sticker) => {
+  const previewSticker = (sticker: Sticker) => {
     setPreviewSticker(sticker);
     setShowPreviewModal(true);
   };
@@ -720,7 +720,7 @@ export const StickersView = () => {
                       >
                         <div 
                           className="aspect-square bg-gray-100 rounded-lg mb-2 flex items-center justify-center cursor-pointer overflow-hidden"
-                          onClick={() => handlePreviewSticker(sticker)}
+                          onClick={() => previewSticker(sticker)}
                         >
                           <img 
                             src={sticker.imageUrl} 
@@ -734,7 +734,7 @@ export const StickersView = () => {
                         
                         <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
-                            onClick={() => handlePreviewSticker(sticker)}
+                            onClick={() => previewSticker(sticker)}
                             className="flex-1 p-1 bg-secondary/20 text-secondary rounded hover:bg-secondary/30 transition-colors"
                           >
                             <Eye size={12} className="mx-auto" />
