@@ -1,0 +1,490 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Kalam:wght@300;400;700&family=Caveat:wght@400;500;600;700&display=swap');
+
+/* CSS Custom Properties for Dynamic Theming */
+:root {
+  --color-primary: #FF6B9D;
+  --color-secondary: #4ECDC4;
+  --color-accent: #FFE66D;
+  --color-orange: #FF8A5B;
+  --color-purple: #9B59B6;
+  --animation-duration: 1s;
+  
+  /* Dark mode colors (default) */
+  --bg-dark: #1a1a2e;
+  --bg-dark-light: #16213e;
+  --bg-dark-card: #0f3460;
+  --text-primary: #ffffff;
+  --text-secondary: #e5e7eb;
+  --text-tertiary: #9ca3af;
+  --text-quaternary: #6b7280;
+  --border-color: #374151;
+  --border-light: #4b5563;
+  --input-bg: #16213e;
+  --input-border: #374151;
+  --hover-bg: #374151;
+}
+
+/* Light mode overrides */
+body.light-mode {
+  --bg-dark: #f8fafc;
+  --bg-dark-light: #f1f5f9;
+  --bg-dark-card: #ffffff;
+  --text-primary: #1f2937;
+  --text-secondary: #374151;
+  --text-tertiary: #6b7280;
+  --text-quaternary: #9ca3af;
+  --border-color: #d1d5db;
+  --border-light: #e5e7eb;
+  --input-bg: #f9fafb;
+  --input-border: #d1d5db;
+  --hover-bg: #f3f4f6;
+}
+
+/* Apply CSS variables to Tailwind classes */
+.bg-dark { background-color: var(--bg-dark) !important; }
+.bg-dark-light { background-color: var(--bg-dark-light) !important; }
+.bg-dark-card { background-color: var(--bg-dark-card) !important; }
+
+/* Text color overrides */
+.text-white { color: var(--text-primary) !important; }
+.text-gray-100 { color: var(--text-primary) !important; }
+.text-gray-200 { color: var(--text-primary) !important; }
+.text-gray-300 { color: var(--text-secondary) !important; }
+.text-gray-400 { color: var(--text-tertiary) !important; }
+.text-gray-500 { color: var(--text-quaternary) !important; }
+.text-gray-600 { color: var(--text-quaternary) !important; }
+
+/* Border color overrides */
+.border-gray-600 { border-color: var(--border-light) !important; }
+.border-gray-700 { border-color: var(--border-color) !important; }
+.border-gray-800 { border-color: var(--border-color) !important; }
+
+/* Background color overrides */
+.bg-gray-700 { background-color: var(--hover-bg) !important; }
+.bg-gray-800 { background-color: var(--bg-dark-light) !important; }
+.bg-gray-900 { background-color: var(--bg-dark-card) !important; }
+
+/* Hover state overrides */
+.hover\:bg-gray-600:hover { background-color: var(--hover-bg) !important; }
+.hover\:bg-gray-700:hover { background-color: var(--hover-bg) !important; }
+.hover\:bg-gray-800:hover { background-color: var(--bg-dark-light) !important; }
+.hover\:text-white:hover { color: var(--text-primary) !important; }
+
+/* Input and form element styles */
+input, textarea, select {
+  background-color: var(--input-bg) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--input-border) !important;
+}
+
+input:focus, textarea:focus, select:focus {
+  border-color: var(--color-primary) !important;
+  background-color: var(--bg-dark-card) !important;
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--text-tertiary) !important;
+}
+
+/* Enhanced theme classes with light mode support */
+.theme-neon {
+  --color-primary: #FF6B9D;
+  --color-secondary: #4ECDC4;
+  --color-accent: #FFE66D;
+  --color-orange: #FF8A5B;
+  --color-purple: #9B59B6;
+}
+
+.theme-retro {
+  --color-primary: #FF8A5B;
+  --color-secondary: #F1C40F;
+  --color-accent: #E74C3C;
+  --color-orange: #FF6B35;
+  --color-purple: #8E44AD;
+}
+
+.theme-cyberpunk {
+  --color-primary: #00FFFF;
+  --color-secondary: #9B59B6;
+  --color-accent: #FF1493;
+  --color-orange: #FF4500;
+  --color-purple: #8A2BE2;
+}
+
+.theme-rainbow {
+  --color-primary: #E74C3C;
+  --color-secondary: #2ECC71;
+  --color-accent: #F1C40F;
+  --color-orange: #FF8C00;
+  --color-purple: #9932CC;
+}
+
+/* Light mode themes */
+.theme-minimal {
+  --color-primary: #6366f1;
+  --color-secondary: #10b981;
+  --color-accent: #f59e0b;
+  --color-orange: #f97316;
+  --color-purple: #8b5cf6;
+}
+
+.theme-nature {
+  --color-primary: #059669;
+  --color-secondary: #0d9488;
+  --color-accent: #ca8a04;
+  --color-orange: #ea580c;
+  --color-purple: #7c3aed;
+}
+
+.theme-ocean {
+  --color-primary: #0ea5e9;
+  --color-secondary: #06b6d4;
+  --color-accent: #0891b2;
+  --color-orange: #f97316;
+  --color-purple: #8b5cf6;
+}
+
+.theme-sunset {
+  --color-primary: #dc2626;
+  --color-secondary: #ea580c;
+  --color-accent: #d97706;
+  --color-orange: #f59e0b;
+  --color-purple: #be185d;
+}
+
+/* Hand-drawn style animations */
+@keyframes wiggle {
+  0%, 100% { transform: rotate(-2deg) translateY(0px); }
+  25% { transform: rotate(1deg) translateY(-2px); }
+  50% { transform: rotate(-1deg) translateY(-1px); }
+  75% { transform: rotate(2deg) translateY(-3px); }
+}
+
+@keyframes bounce-doodle {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-8px) rotate(5deg); }
+}
+
+@keyframes float-sketch {
+  0%, 100% { transform: translateY(0px) rotate(-2deg); }
+  33% { transform: translateY(-5px) rotate(1deg); }
+  66% { transform: translateY(-2px) rotate(-1deg); }
+}
+
+@keyframes scribble {
+  0% { stroke-dashoffset: 100; }
+  100% { stroke-dashoffset: 0; }
+}
+
+/* Sketch-style borders */
+.sketch-border {
+  position: relative;
+}
+
+.sketch-border::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: transparent;
+  border: 2px solid currentColor;
+  border-radius: inherit;
+  transform: rotate(-0.5deg);
+  z-index: -1;
+}
+
+.sketch-border::after {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  right: -1px;
+  bottom: -1px;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: inherit;
+  transform: rotate(0.3deg);
+  z-index: -1;
+  opacity: 0.6;
+}
+
+/* Doodle button styles */
+.doodle-btn {
+  position: relative;
+  transform: rotate(-1deg);
+  transition: all calc(var(--animation-duration) * 0.2) ease;
+}
+
+.doodle-btn:hover {
+  transform: rotate(0deg) scale(1.05);
+}
+
+.doodle-btn:active {
+  transform: rotate(-0.5deg) scale(0.98);
+}
+
+/* Paper texture background */
+.paper-texture {
+  background-image: 
+    radial-gradient(circle at 1px 1px, rgba(255,255,255,0.15) 1px, transparent 0);
+  background-size: 20px 20px;
+}
+
+/* Light mode paper texture */
+body.light-mode .paper-texture {
+  background-image: 
+    radial-gradient(circle at 1px 1px, rgba(0,0,0,0.05) 1px, transparent 0);
+}
+
+/* Scribble underlines */
+.scribble-underline {
+  position: relative;
+}
+
+.scribble-underline::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 10'%3E%3Cpath d='M0,5 Q25,0 50,5 T100,5' stroke='currentColor' stroke-width='2' fill='none'/%3E%3C/svg%3E") repeat-x;
+  background-size: 50px 10px;
+}
+
+/* Notebook lines */
+.notebook-lines {
+  background-image: 
+    linear-gradient(transparent 24px, rgba(255,255,255,0.1) 25px, rgba(255,255,255,0.1) 26px, transparent 27px);
+  background-size: 100% 25px;
+}
+
+/* Light mode notebook lines */
+body.light-mode .notebook-lines {
+  background-image: 
+    linear-gradient(transparent 24px, rgba(0,0,0,0.05) 25px, rgba(0,0,0,0.05) 26px, transparent 27px);
+}
+
+/* Crayon text effect */
+.crayon-text {
+  background: linear-gradient(45deg, var(--color-primary), var(--color-secondary), var(--color-accent), var(--color-orange));
+  background-size: 400% 400%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: gradient-shift calc(var(--animation-duration) * 3) ease infinite;
+}
+
+@keyframes gradient-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Sticker-like elements */
+.sticker-element {
+  filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.3));
+  transform: rotate(-2deg);
+  transition: transform calc(var(--animation-duration) * 0.3) ease;
+}
+
+.sticker-element:nth-child(even) {
+  transform: rotate(1deg);
+}
+
+.sticker-element:hover {
+  transform: rotate(0deg) scale(1.05);
+}
+
+/* Hand-drawn icons */
+.hand-drawn-icon {
+  filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.2));
+  transform: rotate(-1deg);
+  transition: transform calc(var(--animation-duration) * 0.2) ease;
+}
+
+.hand-drawn-icon:hover {
+  transform: rotate(0deg);
+}
+
+/* Light mode hand-drawn icons */
+body.light-mode .hand-drawn-icon {
+  filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.1));
+}
+
+/* Light mode sticker elements */
+body.light-mode .sticker-element {
+  filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.15));
+}
+
+/* Doodle decorations */
+.doodle-decoration {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0.6;
+  animation: float-sketch calc(var(--animation-duration) * 4) ease-in-out infinite;
+}
+
+.doodle-decoration:nth-child(odd) {
+  animation-delay: calc(var(--animation-duration) * -2);
+}
+
+/* Sketch card style */
+.sketch-card {
+  background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%);
+  backdrop-filter: blur(10px);
+  border: 2px solid rgba(255,255,255,0.2);
+  position: relative;
+}
+
+/* Light mode sketch card */
+body.light-mode .sketch-card {
+  background: linear-gradient(135deg, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0.6) 100%);
+  border: 2px solid rgba(0,0,0,0.1);
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.sketch-card::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  right: -1px;
+  bottom: -1px;
+  background: transparent;
+  border: 1px dashed rgba(255,255,255,0.3);
+  border-radius: inherit;
+  transform: rotate(0.5deg);
+  z-index: -1;
+}
+
+/* Light mode sketch card border */
+body.light-mode .sketch-card::before {
+  border: 1px dashed rgba(0,0,0,0.1);
+}
+
+/* Animation control based on settings */
+body[data-animations="false"] * {
+  animation-duration: 0s !important;
+  transition-duration: 0s !important;
+}
+
+/* Dynamic color application using CSS variables */
+.bg-primary { background-color: var(--color-primary); }
+.text-primary { color: var(--color-primary); }
+.border-primary { border-color: var(--color-primary); }
+
+.bg-secondary { background-color: var(--color-secondary); }
+.text-secondary { color: var(--color-secondary); }
+.border-secondary { border-color: var(--color-secondary); }
+
+.bg-accent { background-color: var(--color-accent); }
+.text-accent { color: var(--color-accent); }
+.border-accent { border-color: var(--color-accent); }
+
+.bg-orange { background-color: var(--color-orange); }
+.text-orange { color: var(--color-orange); }
+.border-orange { border-color: var(--color-orange); }
+
+.bg-purple { background-color: var(--color-purple); }
+.text-purple { color: var(--color-purple); }
+.border-purple { border-color: var(--color-purple); }
+
+/* Gradient backgrounds using CSS variables */
+.from-primary { --tw-gradient-from: var(--color-primary); }
+.to-primary { --tw-gradient-to: var(--color-primary); }
+.via-primary { --tw-gradient-via: var(--color-primary); }
+
+.from-secondary { --tw-gradient-from: var(--color-secondary); }
+.to-secondary { --tw-gradient-to: var(--color-secondary); }
+.via-secondary { --tw-gradient-via: var(--color-secondary); }
+
+.from-accent { --tw-gradient-from: var(--color-accent); }
+.to-accent { --tw-gradient-to: var(--color-accent); }
+.via-accent { --tw-gradient-via: var(--color-accent); }
+
+.from-orange { --tw-gradient-from: var(--color-orange); }
+.to-orange { --tw-gradient-to: var(--color-orange); }
+.via-orange { --tw-gradient-via: var(--color-orange); }
+
+.from-purple { --tw-gradient-from: var(--color-purple); }
+.to-purple { --tw-gradient-to: var(--color-purple); }
+.via-purple { --tw-gradient-via: var(--color-purple); }
+
+/* Light mode specific overrides for better contrast */
+body.light-mode {
+  /* Ensure all text is dark in light mode */
+  color: var(--text-primary);
+}
+
+body.light-mode h1,
+body.light-mode h2,
+body.light-mode h3,
+body.light-mode h4,
+body.light-mode h5,
+body.light-mode h6,
+body.light-mode p,
+body.light-mode span,
+body.light-mode div,
+body.light-mode label,
+body.light-mode button {
+  color: var(--text-primary) !important;
+}
+
+/* Override specific text colors in light mode */
+body.light-mode .text-white,
+body.light-mode .text-gray-100,
+body.light-mode .text-gray-200 {
+  color: var(--text-primary) !important;
+}
+
+body.light-mode .text-gray-300 {
+  color: var(--text-secondary) !important;
+}
+
+body.light-mode .text-gray-400,
+body.light-mode .text-gray-500 {
+  color: var(--text-tertiary) !important;
+}
+
+/* Light mode button text */
+body.light-mode button:not(.bg-gradient-to-r):not(.bg-primary):not(.bg-secondary):not(.bg-accent) {
+  color: var(--text-primary) !important;
+}
+
+/* Light mode navigation and header text */
+body.light-mode .font-sketch,
+body.light-mode .font-hand {
+  color: var(--text-primary) !important;
+}
+
+/* Ensure gradient buttons keep white text */
+body.light-mode .bg-gradient-to-r {
+  color: #ffffff !important;
+}
+
+/* Light mode modal and card text */
+body.light-mode .bg-dark-card *,
+body.light-mode .bg-dark-light * {
+  color: var(--text-primary) !important;
+}
+
+/* Light mode form elements */
+body.light-mode input,
+body.light-mode textarea,
+body.light-mode select {
+  background-color: var(--input-bg) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--input-border) !important;
+}
+
+body.light-mode input::placeholder,
+body.light-mode textarea::placeholder {
+  color: var(--text-tertiary) !important;
+}
