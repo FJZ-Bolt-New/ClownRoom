@@ -23,6 +23,24 @@ function App() {
   if (!hasHydrated) {
     return (
       <div className="min-h-screen bg-dark text-white flex items-center justify-center">
+        <a
+          href="https://bolt.new"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            position: 'fixed',
+            bottom: '16px',
+            right: '16px',
+            zIndex: 9999,
+          }}
+        >
+          <img
+            src="/white_circle_360x360"
+            alt="Built with Bolt.new"
+            style={{ height: '48px' }}
+          />
+        </a>
+
         <div className="text-center">
           <div className="text-6xl mb-4 animate-bounce-doodle">🎪</div>
           <h1 className="text-2xl font-bold font-sketch mb-2">ClownRoom</h1>
