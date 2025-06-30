@@ -35,7 +35,7 @@ function App() {
           }}
         >
           <img
-            src="/white_circle_360x360"
+            src="/white_circle_360x360.png"
             alt="Built with Bolt.new"
             style={{ height: '48px' }}
           />
