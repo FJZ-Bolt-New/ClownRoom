@@ -110,7 +110,7 @@ function App() {
         }}
       >
         <img
-          src="/bolt-badge-white.svg" // Adjust path based on your public/assets folder
+          src="/white_circle_360x360.png"
           alt="Built with Bolt.new"
           style={{ height: '48px' }}
         />
